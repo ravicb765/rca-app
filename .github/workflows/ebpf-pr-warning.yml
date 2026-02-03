@@ -1,0 +1,29 @@
+name: eBPF PR guidance
+
+on:
+  pull_request:
+    paths:
+      - 'node-agent/ebpf/**'
+
+jobs:
+  pr-warning:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post eBPF PR guidance comment
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            **eBPF files changed in this PR** 🔔
+
+            Thank you for the contribution! A few quick reminders for eBPF changes:
+
+            - Run `cd node-agent/ebpf && make` or `./compile-ebpf.sh` and attach compiled `.o` objects to the PR, or rely on the eBPF CI artifacts.
+            - Include verifier logs (`dmesg` output) if you attempted a load; the CI will also upload `ebpf-logs` for privileged runs.
+            - Follow the checklist in `.github/copilot-instructions.md` and the troubleshooting steps in `node-agent/ebpf/HOWTO-ebpf.md`.
+
+            If you need help diagnosing a verifier failure, add the `eBPF` label and request a maintainer review (see `.github/CODEOWNERS`).
+
+            _This comment is automatically added for PRs that modify `node-agent/ebpf/*.c` or related files._

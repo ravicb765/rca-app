@@ -1,0 +1,15 @@
+# Code owners who will be requested for review automatically.
+# Adjust usernames or add teams as the project grows.
+
+# eBPF sources and node agent
+/node-agent/ebpf/ @ravicb765
+/node-agent/ @ravicb765
+
+# Backend server
+/server/ @ravicb765
+
+# ML service
+/ml-service/ @ravicb765
+
+# Backstage UI and plugins
+/backstage-portal/ @ravicb765

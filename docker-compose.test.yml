@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  server:
+    build: ./server
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+  ml-service:
+    build: ./ml-service
+    ports:
+      - "5000:5000"

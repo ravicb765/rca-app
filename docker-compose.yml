@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  server:
+    build: ./server
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+  ml-service:
+    build: ./ml-service
+    ports:
+      - "5000:5000"
+  node-agent:
+    build: ./node-agent
+    environment:
+      - RCA_APP_ENDPOINT=http://server:8080
+  backstage:
+    image: backstage/backstage:latest
+    ports:
+      - "7000:7000"
+  clickhouse:
+    image: yandex/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"

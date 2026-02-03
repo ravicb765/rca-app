@@ -1,0 +1,23 @@
+name: Integration tests
+
+on:
+  push:
+  pull_request:
+    paths:
+      - 'docker-compose.test.yml'
+      - 'server/**'
+      - 'ml-service/**'
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure Docker Compose
+        run: docker compose version
+
+      - name: Run integration tests
+        run: |
+          chmod +x ./scripts/run-integration-tests.sh
+          ./scripts/run-integration-tests.sh

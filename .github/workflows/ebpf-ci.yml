@@ -1,0 +1,103 @@
+name: eBPF CI
+on:
+  push:
+    paths:
+      - 'node-agent/ebpf/**'
+  pull_request:
+    paths:
+      - 'node-agent/ebpf/**'
+
+jobs:
+  build-objects:
+    runs-on: [self-hosted, linux, x64, ebpf]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libbpf-dev bpftool make
+
+      - name: Compile BPF objects
+        run: |
+          for f in node-agent/ebpf/*.c; do
+            echo "Compiling $f"
+            clang -O2 -target bpf -c "$f" -o "${f%.c}.o"
+          done
+
+      - name: List compiled objects
+        run: ls -la node-agent/ebpf/*.o
+
+      - name: Optional verifier/load (requires privileged runner)
+        run: |
+          # Loading into the kernel requires privileged access; this step is optional and may fail on hosted runners
+          sudo bpftool prog load node-agent/ebpf/network_tracer.o /sys/fs/bpf/network_tracer || true
+          sudo bpftool prog show || true
+
+      - name: Upload compiled objects
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-objects
+          path: node-agent/ebpf/*.o
+
+      - name: Collect verifier logs and bpftool state (always)
+        if: always()
+        run: |
+          set -e
+          echo "Collecting dmesg"
+          sudo dmesg -T | tail -n +1 > dmesg.log || true
+          echo "Collecting bpftool prog show"
+          sudo bpftool prog show > bpftool-prog-show.log || true
+          echo "Collecting bpftool map show"
+          sudo bpftool map show > bpftool-map-show.log || true
+          echo "Collecting kernel tracing output (if available)"
+          if [ -f /sys/kernel/debug/tracing/trace ]; then sudo cat /sys/kernel/debug/tracing/trace > trace.log || true; fi
+          echo "Listing /sys/fs/bpf"
+          sudo ls -la /sys/fs/bpf > bpf_fs_listing.log || true
+        # upload collected logs so reviewers can inspect verifier messages
+      - name: Upload verifier logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-logs
+          path: |
+            dmesg.log
+            bpftool-prog-show.log
+            bpftool-map-show.log
+            trace.log
+            bpf_fs_listing.log
+
+  verify-load:
+    needs: build-objects
+    runs-on: [self-hosted, linux, x64, ebpf]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Attempt to load compiled BPF objects (non-fatal)
+        run: |
+          set -euo pipefail
+          mkdir -p verify-logs
+          for o in node-agent/ebpf/*.o; do
+            name=$(basename "$o" .o)
+            echo "Attempting to load $o -> /sys/fs/bpf/$name" | tee verify-logs/$name.load.log
+            # Try to load; continue on failure but capture output
+            sudo bpftool prog load "$o" /sys/fs/bpf/"$name" > verify-logs/$name.load.out 2>&1 || true
+            sudo bpftool prog show >> verify-logs/$name.progshow 2>&1 || true
+          done
+          echo "Collecting dmesg after load attempts" > verify-logs/dmesg-after.log
+          sudo dmesg -T | tail -n 200 >> verify-logs/dmesg-after.log || true
+
+      - name: Cleanup loaded objects
+        if: always()
+        run: |
+          for o in node-agent/ebpf/*.o; do
+            name=$(basename "$o" .o)
+            sudo rm -f /sys/fs/bpf/"$name" || true
+          done || true
+
+      - name: Upload verify logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-verify-logs
+          path: verify-logs/

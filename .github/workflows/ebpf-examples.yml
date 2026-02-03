@@ -1,0 +1,26 @@
+name: eBPF Examples Compile
+
+on:
+  pull_request:
+    paths:
+      - 'node-agent/ebpf/**'
+
+jobs:
+  compile-examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Compile examples and capture logs
+        run: |
+          chmod +x node-agent/ebpf/examples/compile_and_log_examples.sh
+          node-agent/ebpf/examples/compile_and_log_examples.sh
+
+      - name: Upload compile logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-example-compile-logs
+          path: node-agent/ebpf/examples/logs/*.compile.log
