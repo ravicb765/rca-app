@@ -5,6 +5,10 @@ This folder contains intentionally failing or edge-case eBPF programs for local 
 Files:
 - `bad_stack.c` - demonstrates excessive stack usage that should trigger a verifier "stack" error
 - `bad_map_key.c` - demonstrates a map/key mismatch scenario
+- `tcp_connect.c` - small example that emits a perf event on `tcp_connect` kprobe
+- `sys_io.c` - example that counts per-process read/write byte counts using a map
+- `cpu_profiler.c` - perf-event sampling example that emits periodic cpu samples
+- `http_filter.c` - simple kprobe that emits an event at `tcp_cleanup_rbuf` (payload parsing omitted)
 - `compile_examples.sh` - convenience script to compile the examples to `.o` objects (does not load them into kernel)
 
 Usage:
