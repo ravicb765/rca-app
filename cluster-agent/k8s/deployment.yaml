@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: cluster-agent
   namespace: observability
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9100"
 spec:
   replicas: 1
   selector:
@@ -21,6 +24,20 @@ spec:
           env:
             - name: PORT
               value: "9100"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9100
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 5
           resources:
             requests:
               cpu: "200m"

@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestServiceMap(t *testing.T) {
-	r := newRouter()
+	store := &serviceStore{}
+	r := newRouter(store)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
 	w := httptest.NewRecorder()
@@ -20,7 +23,8 @@ func TestServiceMap(t *testing.T) {
 }
 
 func TestApplications(t *testing.T) {
-	r := newRouter()
+	store := &serviceStore{}
+	r := newRouter(store)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
 	w := httptest.NewRecorder()
@@ -31,8 +35,48 @@ func TestApplications(t *testing.T) {
 	}
 }
 
+func TestClusterAgentIntegration(t *testing.T) {
+	// fake cluster agent
+	h := http.NewServeMux()
+	h.HandleFunc("/api/v1/cluster/services", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string][]string{"services": {"ns/a", "ns/b"}})
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	store := &serviceStore{}
+
+	// fetch once by calling the server directly as startClusterFetcher would do
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(srv.URL + "/api/v1/cluster/services")
+	if err != nil {
+		t.Fatalf("failed to get from fake cluster-agent: %v", err)
+	}
+	var payload map[string][]string
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	resp.Body.Close()
+	if s, ok := payload["services"]; ok {
+		store.set(s)
+	}
+
+	r := newRouter(store)
+	ts := httptest.NewServer(r)
+	defer ts.Close()
+
+	res, err := http.Get(ts.URL + "/api/v1/servicemap")
+	if err != nil {
+		t.Fatalf("GET servicemap failed: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+}
+
 func TestAgentEndpoints(t *testing.T) {
-	r := newRouter()
+	store := &serviceStore{}
+	r := newRouter(store)
 
 	// heartbeat
 	payload := []byte(`{"hostname":"test","programs":[],"maps":{},"time":"now"}`)

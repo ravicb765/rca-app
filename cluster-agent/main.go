@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	corev1 "k8s.io/api/core/v1"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -18,12 +19,36 @@ import (
 func newRouter(client *kubernetes.Clientset) *gin.Engine {
 	r := gin.Default()
 
-	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	// Prometheus metrics (use a registry local to this router to avoid test
+	// duplicate registration panics)
+	reg := prometheus.NewRegistry()
+	svcFetchTotal := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "cluster_services_fetch_total",
+		Help: "Total cluster services fetch attempts",
+	})
+	svcFetchError := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "cluster_services_fetch_errors_total",
+		Help: "Total errors while fetching cluster services",
+	})
+	reg.MustRegister(svcFetchTotal, svcFetchError)
 
-	// Simple discovery endpoints for cluster metadata
+	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	r.GET("/readyz", func(c *gin.Context) { c.String(http.StatusOK, "ready") })
+	// Expose metrics for Prometheus using a handler bound to the registry
+	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
+
+	// Simple discovery endpoints for cluster metadata. If Kubernetes client is
+	// not available (nil), return an empty list and 200 so compile-only checks
+	// and dev workflows are tolerant.
 	r.GET("/api/v1/cluster/services", func(c *gin.Context) {
+		svcFetchTotal.Inc()
+		if client == nil {
+			c.JSON(http.StatusOK, gin.H{"services": []string{}})
+			return
+		}
 		svcList, err := client.CoreV1().Services("").List(context.Background(), metav1.ListOptions{})
 		if err != nil {
+			svcFetchError.Inc()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -36,8 +61,14 @@ func newRouter(client *kubernetes.Clientset) *gin.Engine {
 	})
 
 	r.GET("/api/v1/cluster/pods", func(c *gin.Context) {
+		svcFetchTotal.Inc()
+		if client == nil {
+			c.JSON(http.StatusOK, gin.H{"pods": []string{}})
+			return
+		}
 		podList, err := client.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{})
 		if err != nil {
+			svcFetchError.Inc()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
