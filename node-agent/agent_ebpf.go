@@ -17,6 +17,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/perf"
 )
 
 // Agent maintains loaded collections and attached links so they remain valid for the lifetime of the process.
@@ -93,6 +94,20 @@ func (a *Agent) loadAndAttach() error {
 		a.cols = append(a.cols, coll)
 		a.mu.Unlock()
 
+		// Create perf readers for PERF_EVENT_ARRAY maps
+		for name, m := range coll.Maps {
+			if m.Type() == ebpf.PerfEventArray {
+				// Try to create a perf reader for this map
+				r, err := perf.NewReader(m, 4096)
+				if err != nil {
+					fmt.Printf("warning: failed to create perf reader for %s: %v\n", name, err)
+					continue
+				}
+				go a.handlePerfEvents(name, r)
+				fmt.Printf("started perf reader for map %s\n", name)
+			}
+		}
+
 		// Attach programs based on their section (kprobe/kretprobe/tracepoint)
 		for name, ps := range spec.Programs {
 			section := ps.Section
@@ -154,23 +169,36 @@ func (a *Agent) loadAndAttach() error {
 	return nil
 }
 
-func (a *Agent) gatherStatus() map[string]any {
+func toHex(b []byte) string {
+	return fmt.Sprintf("0x%x", b)
+}
+
+func (a *Agent) readMaps() map[string]any {
+	out := map[string]any{}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	progNames := []string{}
-	mapNames := []string{}
 	for _, c := range a.cols {
-		for name := range c.Programs {
-			progNames = append(progNames, name)
-		}
-		for name := range c.Maps {
-			mapNames = append(mapNames, name)
+		for name, m := range c.Maps {
+			// Attempt to read a first element (key = zeroed bytes)
+			var key = make([]byte, m.KeySize())
+			val := make([]byte, m.ValueSize())
+			err := m.Lookup(key, &val)
+			if err != nil {
+				// Could be empty or unsupported; record error string
+				out[name] = map[string]any{"error": err.Error()}
+				continue
+			}
+			out[name] = map[string]any{"value": toHex(val)}
 		}
 	}
+	return out
+}
+
+func (a *Agent) gatherStatus() map[string]any {
 	return map[string]any{
 		"hostname": func() string { h, _ := os.Hostname(); return h }(),
-		"programs": progNames,
-		"maps":     mapNames,
+		"programs": func() []string { p := []string{}; a.mu.Lock(); defer a.mu.Unlock(); for _, c := range a.cols { for name := range c.Programs { p = append(p, name) } } return p }(),
+		"maps":     a.readMaps(),
 		"time":     time.Now().UTC().Format(time.RFC3339),
 	}
 }
@@ -195,7 +223,40 @@ func (a *Agent) backgroundLoop() {
 			}
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
-			fmt.Printf("heartbeat sent: status=%d programs=%d maps=%d\n", resp.StatusCode, len(status["programs"].([]string)), len(status["maps"].([]string)))
+			fmt.Printf("heartbeat sent: status=%d programs=%d maps=%d\n", resp.StatusCode, len(status["programs"].([]string)), len(status["maps"].(map[string]any)))
 		}
+	}
+}
+
+func (a *Agent) handlePerfEvents(name string, r *perf.Reader) {
+	defer r.Close()
+	for {
+		rec, err := r.Read()
+		if err != nil {
+			if err == perf.ErrClosed {
+				return
+			}
+			fmt.Printf("perf reader %s error: %v\n", name, err)
+			continue
+		}
+		// send event payload as base64 to server
+		payload := map[string]any{
+			"map":      name,
+			"cpu":      rec.Cpu,
+			"event_len": len(rec.RawSample),
+			"data":     fmt.Sprintf("0x%x", rec.RawSample),
+			"time":     time.Now().UTC().Format(time.RFC3339),
+		}
+		buf := &bytes.Buffer{}
+		_ = json.NewEncoder(buf).Encode(payload)
+		url := strings.TrimRight(a.endpoint, "/") + "/api/v1/agent/event"
+		resp, err := http.Post(url, "application/json", buf)
+		if err != nil {
+			fmt.Printf("failed to post perf event to %s: %v\n", url, err)
+			continue
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		fmt.Printf("sent perf event for %s len=%d status=%d\n", name, len(rec.RawSample), resp.StatusCode)
 	}
 }
