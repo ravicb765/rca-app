@@ -207,9 +207,16 @@ kubectl apply -f monitoring/servicemonitor-cluster-agent.yaml
 kubectl apply -f monitoring/servicemonitor-server.yaml
 ```
 
-If your cluster enforces RBAC, adapt and apply `monitoring/servicemonitor-rbac.yaml` to ensure Prometheus has rights to `get,list,watch` the ServiceMonitor CRD and `services/endpoints/pods` in the `observability` namespace.
+- If your cluster enforces RBAC, adapt and apply `monitoring/servicemonitor-rbac.yaml` to ensure Prometheus has rights to `get,list,watch` the ServiceMonitor CRD and `services/endpoints/pods` in the `observability` namespace. You can generate a tailored binding with `monitoring/create-servicemonitor-rbac.sh`:
 
-For CI verification, see the manual workflow: `.github/workflows/monitoring-integration.yml` (trigger via workflow_dispatch).
+```bash
+SA_NAME=prometheus-kube-prometheus-prometheus SA_NAMESPACE=monitoring \
+  ./monitoring/create-servicemonitor-rbac.sh | kubectl apply -f -
+```
+
+For CI verification, there are two monitoring integration workflows:
+- `.github/workflows/monitoring-integration.yml` — runs in a disposable k3d cluster on GitHub-hosted runners (manual `workflow_dispatch`).
+- `.github/workflows/monitoring-integration-selfhosted.yml` — runs on a self-hosted runner (label it with `monitoring`) and can be triggered on PRs touching monitoring manifests or manually. This workflow is useful if you have a privileged runner with `kubectl`/`helm` preinstalled and want a PR gate for ServiceMonitor discovery.
 
 ### ML Service (Python)
 

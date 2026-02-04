@@ -33,7 +33,14 @@ kubectl -n observability get servicemonitor
   - apiGroups: [""], resources: ["services","endpoints","pods"], verbs: ["get","list","watch"]
   - apiGroup: ["monitoring.coreos.com"], resources: ["servicemonitors"], verbs: ["get","list","watch"]
 
-See `monitoring/servicemonitor-rbac.yaml` for an example that can be adapted to your environment.
+See `monitoring/servicemonitor-rbac.yaml` for an example that can be adapted to your environment. For convenience you can generate a ClusterRoleBinding targeted to your Prometheus service account with:
+
+```bash
+SA_NAME=prometheus-kube-prometheus-prometheus SA_NAMESPACE=monitoring \
+  ./monitoring/create-servicemonitor-rbac.sh | kubectl apply -f -
+```
+
+This avoids manual edits and ensures the binding is applied for the exact service account used by your Prometheus deployment.
 
 ## CI integration (optional)
 We provide a manual GitHub Actions workflow `monitoring-integration.yml` that can be triggered to create a local k3d cluster, install the Prometheus operator (kube-prometheus-stack), apply the RCA-App manifests and ServiceMonitors, and check that ServiceMonitors are present. This is intended for CI environments that have docker-in-docker or k3d available and runs only when manually triggered (workflow_dispatch).
