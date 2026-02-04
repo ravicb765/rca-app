@@ -1,5 +1,17 @@
 # RCA-App: Observability Platform with AI-Powered Root Cause Analysis
 
+Note: This repository includes a CI workflow that compiles eBPF sources and (on self-hosted runners labeled `ebpf`) attempts to verify loading compiled objects. See `.github/workflows/ebpf-verify.yml` for details.
+
+### Agent event format
+
+Agents may post connection telemetry in multiple formats to the server `/api/v1/agent/event` endpoint:
+- Top-level envelope: `{"connections":[ ... ]}`
+- An array of connections: `[ {...}, {...} ]`
+- A single connection object: `{...}`
+- Perf/map events: `{"map":"name","data":"0x..."}` (accepted by server for forwarding to specialized consumers)
+
+The service map builder also contains simple heuristics to classify services (e.g., name hints like `postgres`, `redis`, `mysql`, or protocol hints such as `protocol: "http"`).
+
 A production-ready observability and APM platform with automated root cause analysis.
 
 ## Project Structure

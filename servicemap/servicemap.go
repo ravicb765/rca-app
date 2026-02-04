@@ -1,9 +1,33 @@
 package servicemap
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
+
+// classifyAppName returns a simple service type based on common name hints
+func classifyAppName(name string) string {
+	n := strings.ToLower(name)
+	switch {
+	case strings.Contains(n, "postgres") || strings.Contains(n, "postgresql"):
+		return "postgres"
+	case strings.Contains(n, "mysql"):
+		return "mysql"
+	case strings.Contains(n, "redis"):
+		return "redis"
+	case strings.Contains(n, "mongo"):
+		return "mongodb"
+	case strings.Contains(n, "kafka"):
+		return "kafka"
+	case strings.Contains(n, "rabbit"):
+		return "rabbitmq"
+	case strings.Contains(n, "api") || strings.Contains(n, "http") || strings.Contains(n, "web") || strings.Contains(n, "frontend") || strings.Contains(n, "backend"):
+		return "http"
+	default:
+		return ""
+	}
+}
 
 // ServiceMap represents a dependency graph of applications
 type ServiceMap struct {
@@ -135,5 +159,20 @@ func BuildServiceMap(conns []Connection) *ServiceMap {
 		}
 		sm.AddConnection(c)
 	}
+
+	// classify applications using simple heuristics
+	for _, app := range sm.Applications {
+		// protocol-based detection: if any incoming connection is http, set type
+		for _, conn := range sm.Connections {
+			if conn.DestApp == app.ID && strings.EqualFold(conn.Protocol, "http") {
+				app.Type = "http"
+				break
+			}
+		}
+		if app.Type == "" {
+			app.Type = classifyAppName(app.ID)
+		}
+	}
+
 	return sm
 }

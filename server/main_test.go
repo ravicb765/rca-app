@@ -2,9 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,7 +103,90 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	// GET service map and assert the connection resulted in an application
+	// event - multiple connections via envelope
+	payload = []byte(`{"connections":[{"source_app":"svc1","dest_app":"svc2","protocol":"tcp"},{"source_app":"svc2","dest_app":"svc3","protocol":"http","request_rate":5}]}`)
+	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for envelope, got %d", w.Code)
+	}
+
+	// perf/map style payload with JSON-encoded connection (hex)
+	connBody, _ := json.Marshal([]map[string]any{{"source_app":"p1","dest_app":"p2","protocol":"tcp"}})
+	hexBody := "0x" + strings.ToLower(hex.EncodeToString(connBody))
+	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexBody))
+	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for perf event, got %d", w.Code)
+	}
+
+	// perf/map style payload with ascii key=value pattern
+	ascii := "src=10.0.0.1:1234 dst=10.0.0.2:80 proto=http"
+	hexAscii := "0x" + strings.ToLower(hex.EncodeToString([]byte(ascii)))
+	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexAscii))
+	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for perf ascii event, got %d", w.Code)
+	}
+
+	// perf/map style payload using base64 payload similar to perf-consumer default
+	connBody, _ = json.Marshal(map[string]any{"source_app": "b1", "dest_app": "b2", "protocol": "tcp"})
+	b64 := base64.StdEncoding.EncodeToString(connBody)
+	payload = []byte(fmt.Sprintf(`{"map":"myperf","data_base64":"%s"}`, b64))
+	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for base64 perf event, got %d", w.Code)
+	}
+
+	// binary IPv4 payload
+	ipv4 := []byte{10, 0, 0, 1, 10, 0, 0, 2}
+	ipv4 = append(ipv4, 0x39, 0x00) // sport 57 (little endian 0x0039)
+	ipv4 = append(ipv4, 0x50, 0x00) // dport 80
+	ipv4 = append(ipv4, make([]byte, 8)...)
+	hexIpv4 := "0x" + strings.ToLower(hex.EncodeToString(ipv4))
+	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexIpv4))
+	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for ipv4 binary perf, got %d", w.Code)
+	}
+
+	// binary IPv6 payload
+	ip6src := net.ParseIP("2001:db8::1")
+	ip6dst := net.ParseIP("2001:db8::2")
+	if ip6src == nil || ip6dst == nil {
+		t.Skip("ipv6 parsing not available in this environment")
+	}
+	b6 := make([]byte, 0, 44)
+	b6 = append(b6, ip6src.To16()...)
+	b6 = append(b6, ip6dst.To16()...)
+	b6 = append(b6, 0x1f, 0x00) // sport 31
+	b6 = append(b6, 0x50, 0x00) // dport 80
+	b6 = append(b6, make([]byte, 8)...)
+	hexIpv6 := "0x" + strings.ToLower(hex.EncodeToString(b6))
+	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexIpv6))
+	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for ipv6 binary perf, got %d", w.Code)
+	}
+
+	// GET service map and assert the perf events resulted in applications
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -114,4 +201,32 @@ func TestAgentEndpoints(t *testing.T) {
 	if _, ok := resp["servicemap"]; !ok {
 		t.Fatalf("expected servicemap in response")
 	}
+
+	// Check that IPv4 connection was added (10.0.0.1:57 -> 10.0.0.2:80)
+	if !strings.Contains(w.Body.String(), "10.0.0.1:57") {
+		t.Fatalf("expected ipv4 src present in servicemap")
+	}
+	if !strings.Contains(w.Body.String(), "10.0.0.2:80") {
+		t.Fatalf("expected ipv4 dst present in servicemap")
+	}
+	// Check IPv6 presence (formatted address with port)
+	if !strings.Contains(w.Body.String(), "2001:db8::1:31") && !strings.Contains(w.Body.String(), "[2001:db8::1]:31") {
+		t.Fatalf("expected ipv6 src present in servicemap")
+	}
+	// GET service map and assert the perf events resulted in applications
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := resp["servicemap"]; !ok {
+		t.Fatalf("expected servicemap in response")
+	}
+
 }

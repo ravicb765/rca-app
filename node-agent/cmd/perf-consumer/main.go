@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"bytes"
 	"flag"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,21 +21,26 @@ import (
 )
 
 type EventPayload struct {
-	Map       string `json:"map"`
-	Timestamp int64  `json:"timestamp_ns"`
-	Data      string `json:"data_base64"`
+	Map        string `json:"map"`
+	Timestamp  int64  `json:"timestamp_ns"`
+	DataBase64 string `json:"data_base64,omitempty"`
+	Data       string `json:"data,omitempty"`
 }
 
-func makePayload(mapName string, rec perf.Record) EventPayload {
+func makePayload(mapName string, rec perf.Record, sendHex bool) EventPayload {
 	var dataB64 string
+	var dataHex string
 	if rec.RawSample != nil {
 		dataB64 = base64.StdEncoding.EncodeToString(rec.RawSample)
+		dataHex = "0x" + strings.ToLower(hex.EncodeToString(rec.RawSample))
 	}
-	return EventPayload{
-		Map:       mapName,
-		Timestamp: time.Now().UnixNano(),
-		Data:      dataB64,
+	p := EventPayload{Map: mapName, Timestamp: time.Now().UnixNano()}
+	if sendHex {
+		p.Data = dataHex
+	} else {
+		p.DataBase64 = dataB64
 	}
+	return p
 }
 
 func postEvent(client *http.Client, url string, payload EventPayload, token string) error {
@@ -67,6 +74,7 @@ func main() {
 	server := flag.String("server", "http://localhost:8080/api/v1/agent/event", "Server URL to POST events to")
 	token := flag.String("token", "", "Optional bearer token for server auth")
 	pageSize := flag.Int("pagesize", os.Getpagesize()*8, "Perf reader page size (bytes)")
+	sendHex := flag.Bool("send-hex", false, "Send perf data as hex in 'data' field instead of base64 in 'data_base64'")
 	flag.Parse()
 
 	if *mapPath == "" {
@@ -108,7 +116,7 @@ func main() {
 				time.Sleep(200 * time.Millisecond)
 				continue
 			}
-			payload := makePayload(*mapName, rec)
+			payload := makePayload(*mapName, rec, *sendHex)
 			if err := postEvent(client, *server, payload, *token); err != nil {
 				log.Printf("failed to post event: %v", err)
 			}

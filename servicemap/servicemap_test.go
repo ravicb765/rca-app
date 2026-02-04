@@ -28,4 +28,12 @@ func TestBuildServiceMap(t *testing.T) {
 	if sm.HasDependency("postgres", "backend") {
 		t.Fatalf("did not expect postgres -> backend dependency")
 	}
+
+	// Type classification heuristics
+	if sm.Applications["backend"].Type != "http" {
+		t.Fatalf("expected backend type 'http', got '%s'", sm.Applications["backend"].Type)
+	}
+	if sm.Applications["postgres"].Type != "postgres" {
+		t.Fatalf("expected postgres type 'postgres', got '%s'", sm.Applications["postgres"].Type)
+	}
 }

@@ -179,6 +179,14 @@ type CloudIntegration struct {
 - Detect service types (HTTP API, database, message queue, etc.)
 - Update map in real-time as topology changes
 
+Notes:
+- Agents may send connection telemetry as an envelope (`{"connections": [...]}`), as an array or a single connection. The server accepts these formats and normalizes them for the Service Map Builder.
+- The Service Map Builder applies simple classification heuristics (name-based hints like `postgres`, `redis`, `mysql`, or protocol hints such as `protocol: "http"`) to set the `Type` field on applications. This improves visualization and downstream analytics while remaining lightweight.
+- Supported perf/map binary layout (compact, for eBPF perf events):
+  - IPv4: struct { u32 saddr; u32 daddr; u16 sport; u16 dport; u64 ts_ns } (20 bytes, little-endian)
+  - IPv6: struct { u8 saddr[16]; u8 daddr[16]; u16 sport; u16 dport; u64 ts_ns } (44 bytes, little-endian)
+  The server will decode hex-encoded (`data: "0x..."`) or base64 (`data_base64`) payloads and map them to connections using these layouts when possible.
+
 **Data Model**:
 
 ```go

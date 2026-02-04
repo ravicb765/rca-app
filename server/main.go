@@ -1,11 +1,18 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +22,83 @@ import (
 
 	"github.com/ravicb765/rca-app/server/servicemap"
 )
+
+var kvRe = regexp.MustCompile(`(src|source|dst|dest|proto)=([^\s]+)`) 
+
+// decodePerfRaw tries to interpret raw bytes as one of: JSON array/object, ascii key=value, or a binary conn_event
+func decodePerfRaw(b []byte) ([]servicemap.Connection, error) {
+	// Try JSON
+	var conns []servicemap.Connection
+	if err := json.Unmarshal(b, &conns); err == nil {
+		return conns, nil
+	}
+	var conn servicemap.Connection
+	if err := json.Unmarshal(b, &conn); err == nil {
+		return []servicemap.Connection{conn}, nil
+	}
+	// Try ascii key=value parsing
+	sb := string(b)
+	matches := kvRe.FindAllStringSubmatch(sb, -1)
+	m := map[string]string{}
+	for _, mm := range matches {
+		if len(mm) == 3 {
+			m[strings.ToLower(mm[1])] = mm[2]
+		}
+	}
+	if src, ok := m["src"]; ok {
+		dst := m["dst"]
+		if dst == "" {
+			dst = m["dest"]
+		}
+		proto := m["proto"]
+		c := servicemap.Connection{SourceApp: src, DestApp: dst, Protocol: proto}
+		return []servicemap.Connection{c}, nil
+	}
+	// Try binary layout: IPv6 first: struct { u8 saddr[16]; u8 daddr[16]; u16 sport; u16 dport; u64 ts_ns }
+	if len(b) >= 44 {
+		srcIP := net.IP(b[0:16]).String()
+		dstIP := net.IP(b[16:32]).String()
+		sport := binary.LittleEndian.Uint16(b[32:34])
+		dport := binary.LittleEndian.Uint16(b[34:36])
+		src := fmt.Sprintf("%s:%d", srcIP, sport)
+		dst := fmt.Sprintf("%s:%d", dstIP, dport)
+		c6 := servicemap.Connection{SourceApp: src, DestApp: dst, Protocol: "tcp", Latency: 0}
+		return []servicemap.Connection{c6}, nil
+	}
+
+	// IPv4 layout: struct { u32 saddr; u32 daddr; u16 sport; u16 dport; u64 ts_ns }
+	if len(b) >= 20 {
+		srcIP := net.IP(b[0:4]).String()
+		dstIP := net.IP(b[4:8]).String()
+		sport := binary.LittleEndian.Uint16(b[8:10])
+		dport := binary.LittleEndian.Uint16(b[10:12])
+		src := fmt.Sprintf("%s:%d", srcIP, sport)
+		dst := fmt.Sprintf("%s:%d", dstIP, dport)
+		c2 := servicemap.Connection{SourceApp: src, DestApp: dst, Protocol: "tcp", Latency: 0}
+		return []servicemap.Connection{c2}, nil
+	}
+	return nil, nil
+}
+
+// decodePerfData attempts to decode hex-encoded perf/map data into connections.
+// It decodes the hex string and calls decodePerfRaw on the bytes.
+func decodePerfData(hexStr string) ([]servicemap.Connection, error) {
+	s := strings.TrimPrefix(hexStr, "0x")
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, err
+	}
+	return decodePerfRaw(b)
+}
+
+// decodePerfBase64 decodes base64 payloads and calls decodePerfRaw
+func decodePerfBase64(b64 string) ([]servicemap.Connection, error) {
+	b, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil, err
+	}
+	return decodePerfRaw(b)
+}
 
 // Simple in-memory service map store
 type serviceStore struct {
@@ -103,8 +187,11 @@ func newRouter(store *serviceStore) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"received": true})
 	})
 
-	// Agent event endpoint used by perf readers - accepts either a single connection
-	// or an array of connections and stores them for building the service map
+	// Agent event endpoint used by perf readers - accepts several payload forms:
+	//  - top-level envelope {"connections": [...]}
+	//  - an array of connections
+	//  - a single connection
+	//  - perf/map events {"map": "mymap", "data": "0x..."}
 	r.POST("/api/v1/agent/event", func(c *gin.Context) {
 		raw, err := c.GetRawData()
 		if err != nil {
@@ -112,6 +199,53 @@ func newRouter(store *serviceStore) *gin.Engine {
 			return
 		}
 
+		// Top-level envelope support
+		var env struct {
+			Connections []servicemap.Connection `json:"connections"`
+			Map         string                  `json:"map"`
+			Data        string                  `json:"data"`
+			DataBase64  string                  `json:"data_base64"`
+		}
+		if err := json.Unmarshal(raw, &env); err == nil {
+			if len(env.Connections) > 0 {
+				cstore.addAll(env.Connections)
+				c.JSON(http.StatusOK, gin.H{"received": true, "added": len(env.Connections)})
+				return
+			}
+			// prefer base64 field if present (common from perf-consumer)
+			if env.Map != "" && env.DataBase64 != "" {
+				if conns, err := decodePerfBase64(env.DataBase64); err == nil && len(conns) > 0 {
+					cstore.addAll(conns)
+					c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(conns)})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map})
+				return
+			}
+			if env.Map != "" && env.Data != "" {
+				// Attempt best-effort decoding of perf/map payloads (hex or raw)
+				// try hex first
+				if strings.HasPrefix(env.Data, "0x") {
+					if conns, err := decodePerfData(env.Data); err == nil && len(conns) > 0 {
+						cstore.addAll(conns)
+						c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(conns)})
+						return
+					}
+				} else {
+					// raw ASCII or JSON bytes
+					if conns, err := decodePerfRaw([]byte(env.Data)); err == nil && len(conns) > 0 {
+						cstore.addAll(conns)
+						c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(conns)})
+						return
+					}
+				}
+				// Accept perf/map event formats; decoding may be done by specialized consumers
+				c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map})
+				return
+			}
+		}
+
+		// Backwards compatible: array of connections
 		var conns []servicemap.Connection
 		if err := json.Unmarshal(raw, &conns); err == nil {
 			cstore.addAll(conns)
@@ -119,6 +253,7 @@ func newRouter(store *serviceStore) *gin.Engine {
 			return
 		}
 
+		// Single connection
 		var conn servicemap.Connection
 		if err := json.Unmarshal(raw, &conn); err == nil {
 			cstore.add(conn)
