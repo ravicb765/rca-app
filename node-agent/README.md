@@ -29,7 +29,8 @@ Usage
 Notes
 
 - The agent will attempt to attach programs based on their section (e.g., `kprobe/tcp_connect`, `kretprobe/tcp_connect`, `tracepoint/net/net_dev_xmit`).
-- A background heartbeat is sent to `$RCA_APP_ENDPOINT/api/v1/agent/heartbeat` every 15s with a JSON object describing loaded programs and maps.
+- A background heartbeat is sent to `$RCA_APP_ENDPOINT/api/v1/agent/heartbeat` every 15s with a JSON object describing loaded programs and maps (now includes a small sample of map values when present).
+- The agent will also read `PERF_EVENT_ARRAY` maps and forward perf records to `$RCA_APP_ENDPOINT/api/v1/agent/event` as JSON payloads.
 - Cleanup is attempted on shutdown; if attachments fail you will see warnings in logs.
 
 Safety
