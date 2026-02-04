@@ -452,3 +452,28 @@ func TestCassandraLatencyRule(t *testing.T) {
 	}
 	t.Error("expected High Cassandra Latency to fail")
 }
+
+func TestPostgresLatencyRule(t *testing.T) {
+	engine := NewInspectionEngine(nil)
+	sm := servicemap.NewServiceMap()
+	appID := "postgres-slow"
+	sm.Applications[appID] = &servicemap.Application{ID: appID, Name: "Postgres Slow", Type: "postgres"}
+
+	sm.Connections = append(sm.Connections, servicemap.Connection{
+		SourceApp:   "client",
+		DestApp:     appID,
+		Protocol:    "postgres", // or mysql, cockroachdb, yugabytedb
+		RequestRate: 100,
+		Latency:     60, // > 50ms threshold
+	})
+
+	engine.Run(sm)
+	results := engine.GetResults(appID)
+
+	for _, r := range results {
+		if r.Name == "High Postgres-Compatible DB Latency" && r.Status == "fail" {
+			return // Test passed
+		}
+	}
+	t.Error("expected High Postgres-Compatible DB Latency to fail")
+}

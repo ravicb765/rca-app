@@ -193,15 +193,15 @@ func (r *MemcachedLatencyRule) Evaluate(app *servicemap.Application, metrics App
 	return true, fmt.Sprintf("Memcached latency %.2fms is within limits", metrics.MemcachedLatency)
 }
 
-type MysqlLatencyRule struct {
+type PostgresLatencyRule struct {
 	Threshold float64 // in ms
 }
 
-func (r *MysqlLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+func (r *PostgresLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
 	if metrics.MysqlLatency > r.Threshold {
-		return false, fmt.Sprintf("MySQL latency %.2fms exceeds threshold %.2fms", metrics.MysqlLatency, r.Threshold)
+		return false, fmt.Sprintf("Postgres-compatible DB latency %.2fms exceeds threshold %.2fms", metrics.MysqlLatency, r.Threshold)
 	}
-	return true, fmt.Sprintf("MySQL latency %.2fms is within limits", metrics.MysqlLatency)
+	return true, fmt.Sprintf("Postgres-compatible DB latency %.2fms is within limits", metrics.MysqlLatency)
 }
 
 type MongoLatencyRule struct {

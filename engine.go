@@ -230,12 +230,12 @@ func NewInspectionEngine(reg prometheus.Registerer) *InspectionEngine {
 			Threshold:   "10ms",
 		},
 		{
-			Name:        "High MySQL Latency",
+			Name:        "High Postgres-Compatible DB Latency",
 			Category:    "Performance",
-			Rule:        &MysqlLatencyRule{Threshold: 50}, // 50ms
+			Rule:        &PostgresLatencyRule{Threshold: 50}, // 50ms
 			Severity:    SeverityWarning,
 			Remediation: "Optimize queries, check indexes, or investigate database load.",
-			Threshold:   "50ms",
+			Threshold:   "50ms (for MySQL, CockroachDB, YugabyteDB)",
 		},
 		{
 			Name:        "High MongoDB Latency",
@@ -358,7 +358,7 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 		// For this example, let's assume we can get it from a hypothetical field or metric
 		// s.maxMemcachedLat = ... (This would require updating Connection struct in servicemap)
 
-		if conn.Protocol == "mysql" || conn.Protocol == "mariadb" {
+		if conn.Protocol == "mysql" || conn.Protocol == "mariadb" || conn.Protocol == "cockroachdb" || conn.Protocol == "yugabytedb" {
 			s.totalMysqlLat += conn.Latency * conn.RequestRate
 			s.totalMysqlReq += conn.RequestRate
 		}
