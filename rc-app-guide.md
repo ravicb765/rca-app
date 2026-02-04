@@ -1,7 +1,5 @@
 # Building RCA-App: An Observability Platform with AI-Powered Root Cause Analysis
 
-> NOTE: This file has been superseded by `rca-app-guide.md` (more concise developer workflows and CI references). Please read `rca-app-guide.md` for up-to-date developer instructions and eBPF workflows.
-
 ## Executive Summary
 
 This guide provides a comprehensive blueprint for building an observability and Application Performance Monitoring (APM) platform called RCA-App, with AI-powered root cause analysis capabilities. The platform combines metrics, logs, traces, and continuous profiling with automated inspections and actionable insights.
