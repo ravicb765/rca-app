@@ -159,3 +159,25 @@ func (r *GoroutineCountRule) Evaluate(app *servicemap.Application, metrics AppMe
 	}
 	return true, fmt.Sprintf("Goroutine count %.0f is within limits", metrics.GoroutineCount)
 }
+
+type OpenFDCountRule struct {
+	Threshold float64
+}
+
+func (r *OpenFDCountRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.OpenFDs > r.Threshold {
+		return false, fmt.Sprintf("Open file descriptors %.0f exceeds threshold %.0f", metrics.OpenFDs, r.Threshold)
+	}
+	return true, fmt.Sprintf("Open file descriptors %.0f is within limits", metrics.OpenFDs)
+}
+
+type ThreadCountRule struct {
+	Threshold float64
+}
+
+func (r *ThreadCountRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.ThreadCount > r.Threshold {
+		return false, fmt.Sprintf("Thread count %.0f exceeds threshold %.0f", metrics.ThreadCount, r.Threshold)
+	}
+	return true, fmt.Sprintf("Thread count %.0f is within limits", metrics.ThreadCount)
+}

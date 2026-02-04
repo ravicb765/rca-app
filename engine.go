@@ -51,6 +51,8 @@ type AppMetrics struct {
 	RestartCount      float64 // count
 	CPUThrottling     float64 // percentage
 	GoroutineCount    float64 // count
+	OpenFDs           float64 // count
+	ThreadCount       float64 // count
 }
 
 type Rule interface {
@@ -197,6 +199,22 @@ func NewInspectionEngine(reg prometheus.Registerer) *InspectionEngine {
 			Remediation: "Check for goroutine leaks or excessive concurrency.",
 			Threshold:   "10000",
 		},
+		{
+			Name:        "High Open File Descriptors",
+			Category:    "Resources",
+			Rule:        &OpenFDCountRule{Threshold: 1000}, // 1000 FDs
+			Severity:    SeverityWarning,
+			Remediation: "Check for file descriptor leaks (sockets, files) or increase ulimit.",
+			Threshold:   "1000",
+		},
+		{
+			Name:        "High Thread Count",
+			Category:    "Resources",
+			Rule:        &ThreadCountRule{Threshold: 500}, // 500 threads
+			Severity:    SeverityWarning,
+			Remediation: "Check for thread leaks or excessive concurrency.",
+			Threshold:   "500",
+		},
 	}
 	return engine
 }
@@ -223,6 +241,8 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 		maxRestart    float64
 		maxThrottling float64
 		maxGoroutines float64
+		maxOpenFDs    float64
+		maxThreads    float64
 	}
 	stats := make(map[string]*tempStats)
 
@@ -264,6 +284,12 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 		if conn.GoroutineCount > s.maxGoroutines {
 			s.maxGoroutines = conn.GoroutineCount
 		}
+		if conn.OpenFDs > s.maxOpenFDs {
+			s.maxOpenFDs = conn.OpenFDs
+		}
+		if conn.ThreadCount > s.maxThreads {
+			s.maxThreads = conn.ThreadCount
+		}
 	}
 
 	for id, s := range stats {
@@ -284,6 +310,8 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 				RestartCount:      s.maxRestart,
 				CPUThrottling:     s.maxThrottling,
 				GoroutineCount:    s.maxGoroutines,
+				OpenFDs:           s.maxOpenFDs,
+				ThreadCount:       s.maxThreads,
 			}
 		}
 	}

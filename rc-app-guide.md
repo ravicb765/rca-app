@@ -280,6 +280,56 @@ inspections:
     category: "Network"
     threshold: "network_latency > 50ms"
     severity: "warning"
+
+  - name: "High CPU Usage"
+    category: "Resources"
+    threshold: "cpu_usage > 80%"
+    severity: "warning"
+
+  - name: "High Disk Usage"
+    category: "Resources"
+    threshold: "disk_usage > 90%"
+    severity: "critical"
+
+  - name: "High IO Load"
+    category: "Performance"
+    threshold: "io_load > 10"
+    severity: "warning"
+
+  - name: "Network Packet Loss"
+    category: "Network"
+    threshold: "packet_loss > 1%"
+    severity: "warning"
+
+  - name: "High HTTP 5xx Rate"
+    category: "Availability"
+    threshold: "http_5xx_rate > 5%"
+    severity: "critical"
+
+  - name: "High Disk I/O Wait"
+    category: "Performance"
+    threshold: "io_wait > 10%"
+    severity: "warning"
+
+  - name: "High Memory Swap Usage"
+    category: "Resources"
+    threshold: "swap_usage > 10%"
+    severity: "warning"
+
+  - name: "High Container Restarts"
+    category: "Stability"
+    threshold: "restart_count > 3"
+    severity: "critical"
+
+  - name: "High CPU Throttling"
+    category: "Performance"
+    threshold: "cpu_throttling > 5%"
+    severity: "warning"
+
+  - name: "High Goroutine Count"
+    category: "Resources"
+    threshold: "goroutine_count > 10000"
+    severity: "warning"
 ```
 
 **Implementation**:

@@ -163,8 +163,46 @@ func (s *serviceStore) list() []string {
 	return append([]string{}, s.services...)
 }
 
+// AgentInfo represents a connected node agent
+type AgentInfo struct {
+	Hostname string    `json:"hostname"`
+	IP       string    `json:"ip"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
+// AgentStore tracks active agents
+type AgentStore struct {
+	agents map[string]AgentInfo
+	mu     sync.RWMutex
+}
+
+func NewAgentStore() *AgentStore {
+	return &AgentStore{
+		agents: make(map[string]AgentInfo),
+	}
+}
+
+func (s *AgentStore) Touch(hostname, ip string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agents[hostname] = AgentInfo{Hostname: hostname, IP: ip, LastSeen: time.Now()}
+}
+
+func (s *AgentStore) ListActive() []AgentInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var active []AgentInfo
+	cutoff := time.Now().Add(-5 * time.Minute)
+	for _, a := range s.agents {
+		if a.LastSeen.After(cutoff) {
+			active = append(active, a)
+		}
+	}
+	return active
+}
+
 // newRouter creates the HTTP handlers. Exported for testing.
-func newRouter(store *serviceStore, builder *servicemap.ServiceMapBuilder, inspectionEngine *inspections.InspectionEngine, sloTracker *slo.SLOTracker) *gin.Engine {
+func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.ServiceMapBuilder, inspectionEngine *inspections.InspectionEngine, sloTracker *slo.SLOTracker) *gin.Engine {
 	r := gin.Default()
 
 	r.GET("/api/v1/servicemap", func(c *gin.Context) {
@@ -217,13 +255,23 @@ func newRouter(store *serviceStore, builder *servicemap.ServiceMapBuilder, inspe
 		c.JSON(http.StatusOK, gin.H{"slos": status})
 	})
 
+	r.GET("/api/v1/agents", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"agents": agentStore.ListActive()})
+	})
+
 	// Agent heartbeat endpoint used by node-agent
 	r.POST("/api/v1/agent/heartbeat", func(c *gin.Context) {
-		var payload map[string]any
+		var payload struct {
+			Hostname string `json:"hostname"`
+		}
 		if err := c.BindJSON(&payload); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Update agent store
+		agentStore.Touch(payload.Hostname, c.ClientIP())
+
 		// For now, just acknowledge receipt
 		c.JSON(http.StatusOK, gin.H{"received": true})
 	})
@@ -303,6 +351,22 @@ func newRouter(store *serviceStore, builder *servicemap.ServiceMapBuilder, inspe
 		}
 
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+	})
+
+	// Process metrics endpoint
+	r.POST("/api/v1/agent/processes", func(c *gin.Context) {
+		var processes []struct {
+			PID      int     `json:"pid"`
+			CPU      float64 `json:"cpu"`
+			Memory   uint64  `json:"memory"`
+			Hostname string  `json:"hostname"`
+		}
+		if err := c.BindJSON(&processes); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		log.Printf("Received metrics for %d processes", len(processes))
+		c.JSON(http.StatusOK, gin.H{"received": true, "count": len(processes)})
 	})
 
 	return r
@@ -391,6 +455,7 @@ func startClusterFetcher(store *serviceStore, metaCache *MetadataCache, stopCh <
 
 func main() {
 	store := &serviceStore{}
+	agentStore := NewAgentStore()
 
 	// Prometheus metrics for server-side ingestion
 	reg := prometheus.NewRegistry()
@@ -439,7 +504,7 @@ func main() {
 	})
 	reg.MustRegister(fetchTotal, fetchSuccess, fetchErrors)
 
-	r := newRouter(store, builder, inspectionEngine, sloTracker)
+	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker)
 	// add server metrics endpoint bound to registry
 	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
 

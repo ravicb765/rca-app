@@ -6,7 +6,7 @@ import os
 
 BASE_URL = os.environ.get("RCA_APP_URL", "http://localhost:8080")
 
-def send_event(src_ip, dst_ip, memory_usage, cpu_usage, disk_usage, io_load, active_conns, packet_loss, http_5xx, io_wait, swap_usage, restart_count, cpu_throttling, goroutine_count):
+def send_event(src_ip, dst_ip, memory_usage, cpu_usage, disk_usage, io_load, active_conns, packet_loss, http_5xx, io_wait, swap_usage, restart_count, cpu_throttling, goroutine_count, open_fds, thread_count):
     url = f"{BASE_URL}/api/v1/agent/event"
     payload = {
         "connections": [
@@ -30,7 +30,9 @@ def send_event(src_ip, dst_ip, memory_usage, cpu_usage, disk_usage, io_load, act
                 "swap_usage": swap_usage,
                 "restart_count": restart_count,
                 "cpu_throttling": cpu_throttling,
-                "goroutine_count": goroutine_count
+                "goroutine_count": goroutine_count,
+                "open_fds": open_fds,
+                "thread_count": thread_count
             }
         ]
     }
@@ -43,7 +45,7 @@ def send_event(src_ip, dst_ip, memory_usage, cpu_usage, disk_usage, io_load, act
         )
         
         with urllib.request.urlopen(req) as response:
-            print(f"Sent event: Mem={memory_usage}MB CPU={cpu_usage}% Loss={packet_loss}% 5xx={http_5xx} IOWait={io_wait}% Swap={swap_usage}% Restarts={restart_count} Throttling={cpu_throttling}% Goroutines={goroutine_count}, Status={response.getcode()}")
+            print(f"Sent event: Mem={memory_usage}MB CPU={cpu_usage}% Loss={packet_loss}% 5xx={http_5xx} IOWait={io_wait}% Swap={swap_usage}% Restarts={restart_count} Throttling={cpu_throttling}% Goroutines={goroutine_count} FDs={open_fds} Threads={thread_count}, Status={response.getcode()}")
     except urllib.error.URLError as e:
         print(f"Error connecting to {url}: {e}")
 
@@ -63,12 +65,14 @@ def main():
     restart_count = 0.0
     cpu_throttling = 0.0
     goroutine_count = 100.0
+    open_fds = 100.0
+    thread_count = 10.0
     
     src = "10.0.0.1"
     dst = "10.0.0.2"
     
     for i in range(15):
-        send_event(src, dst, memory, cpu, disk, io_load, active_conns, packet_loss, http_5xx, io_wait, swap_usage, restart_count, cpu_throttling, goroutine_count)
+        send_event(src, dst, memory, cpu, disk, io_load, active_conns, packet_loss, http_5xx, io_wait, swap_usage, restart_count, cpu_throttling, goroutine_count, open_fds, thread_count)
         memory += 50.0 # Increase memory
         cpu = min(100.0, cpu + 5.0)
         disk = min(100.0, disk + 2.0)
@@ -81,6 +85,8 @@ def main():
         restart_count += 1.0 # Increase restarts
         cpu_throttling = min(100.0, cpu_throttling + 1.0) # Increase throttling
         goroutine_count += 1000.0 # Increase goroutines
+        open_fds += 100.0 # Increase open FDs
+        thread_count += 50.0 # Increase threads
         time.sleep(1)
 
 if __name__ == "__main__":

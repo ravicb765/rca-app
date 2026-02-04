@@ -355,3 +355,51 @@ func TestGoroutineCountRule(t *testing.T) {
 	}
 	t.Error("expected High Goroutine Count to fail")
 }
+
+func TestOpenFDCountRule(t *testing.T) {
+	engine := NewInspectionEngine(nil)
+	sm := servicemap.NewServiceMap()
+	appID := "leaky-fds"
+	sm.Applications[appID] = &servicemap.Application{ID: appID, Name: "Leaky FDs"}
+
+	sm.Connections = append(sm.Connections, servicemap.Connection{
+		SourceApp:   "client",
+		DestApp:     appID,
+		RequestRate: 10,
+		OpenFDs:     1500, // > 1000 threshold
+	})
+
+	engine.Run(sm)
+	results := engine.GetResults(appID)
+
+	for _, r := range results {
+		if r.Name == "High Open File Descriptors" && r.Status == "fail" {
+			return
+		}
+	}
+	t.Error("expected High Open File Descriptors to fail")
+}
+
+func TestThreadCountRule(t *testing.T) {
+	engine := NewInspectionEngine(nil)
+	sm := servicemap.NewServiceMap()
+	appID := "leaky-threads"
+	sm.Applications[appID] = &servicemap.Application{ID: appID, Name: "Leaky Threads"}
+
+	sm.Connections = append(sm.Connections, servicemap.Connection{
+		SourceApp:   "client",
+		DestApp:     appID,
+		RequestRate: 10,
+		ThreadCount: 600, // > 500 threshold
+	})
+
+	engine.Run(sm)
+	results := engine.GetResults(appID)
+
+	for _, r := range results {
+		if r.Name == "High Thread Count" && r.Status == "fail" {
+			return
+		}
+	}
+	t.Error("expected High Thread Count to fail")
+}

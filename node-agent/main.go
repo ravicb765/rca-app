@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -31,6 +33,13 @@ type ConnectionStats struct {
 	Destination string
 	Packets     uint64
 	Bytes       uint64
+}
+
+// ProcessStats represents CPU/Memory usage for a process
+type ProcessStats struct {
+	PID      int
+	CPUUsage float64
+	MemUsage uint64 // bytes
 }
 
 // NetworkTracer handles network-related eBPF collection
@@ -89,6 +98,9 @@ func (a *NodeAgent) Start() error {
 	// 2. Start background tasks
 	a.wg.Add(1)
 	go a.runEventLoop()
+
+	a.wg.Add(1)
+	go a.runProcessCollector()
 
 	return nil
 }
@@ -162,6 +174,67 @@ func (a *NodeAgent) runEventLoop() {
 			log.Println("Agent heartbeat: healthy")
 		}
 	}
+}
+
+func (a *NodeAgent) runProcessCollector() {
+	defer a.wg.Done()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			stats, err := collectProcessMetrics()
+			if err != nil {
+				log.Printf("Error collecting process metrics: %v", err)
+				continue
+			}
+			// In a real implementation, we would batch and send these to the server
+			// For now, we log the top consumer to demonstrate collection
+			if len(stats) > 0 {
+				log.Printf("Collected metrics for %d processes. Top PID: %d (CPU: %.2f%%)", 
+					len(stats), stats[0].PID, stats[0].CPUUsage)
+			}
+		}
+	}
+}
+
+// collectProcessMetrics scans /proc to get basic metrics
+// This is a simplified implementation. Production agents often use eBPF for this too
+// (e.g., sched_switch tracepoints) but /proc is standard for basic stats.
+func collectProcessMetrics() ([]ProcessStats, error) {
+	matches, err := filepath.Glob("/proc/[0-9]*")
+	if err != nil {
+		return nil, err
+	}
+
+	var stats []ProcessStats
+	for _, path := range matches {
+		base := filepath.Base(path)
+		pid, err := strconv.Atoi(base)
+		if err != nil {
+			continue
+		}
+
+		// Read /proc/[pid]/stat
+		data, err := os.ReadFile(filepath.Join(path, "stat"))
+		if err != nil {
+			continue
+		}
+		fields := bytes.Fields(data)
+		if len(fields) < 24 {
+			continue
+		}
+
+		// RSS is field 24 (pages)
+		rssPages, _ := strconv.ParseUint(string(fields[23]), 10, 64)
+		rssBytes := rssPages * uint64(os.Getpagesize())
+
+		stats = append(stats, ProcessStats{PID: pid, MemUsage: rssBytes, CPUUsage: 0.0})
+	}
+	return stats, nil
 }
 
 // ConnEvent matches the C struct in network_tracer.c

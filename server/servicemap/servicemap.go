@@ -80,6 +80,8 @@ type Connection struct {
 	RestartCount      float64 `json:"restart_count,omitempty"`
 	CPUThrottling     float64 `json:"cpu_throttling,omitempty"`
 	GoroutineCount    float64 `json:"goroutine_count,omitempty"`
+	OpenFDs           float64 `json:"open_fds,omitempty"`
+	ThreadCount       float64 `json:"thread_count,omitempty"`
 }
 
 // TelemetryEvent represents a raw network event received from an agent
@@ -104,6 +106,8 @@ type TelemetryEvent struct {
 	RestartCount      float64 `json:"restart_count"`
 	CPUThrottling     float64 `json:"cpu_throttling"`
 	GoroutineCount    float64 `json:"goroutine_count"`
+	OpenFDs           float64 `json:"open_fds"`
+	ThreadCount       float64 `json:"thread_count"`
 }
 
 // NewServiceMap creates an empty ServiceMap
@@ -268,6 +272,8 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 		existing.RestartCount = existing.RestartCount*(1-alpha) + event.RestartCount*alpha
 		existing.CPUThrottling = existing.CPUThrottling*(1-alpha) + event.CPUThrottling*alpha
 		existing.GoroutineCount = existing.GoroutineCount*(1-alpha) + event.GoroutineCount*alpha
+		existing.OpenFDs = existing.OpenFDs*(1-alpha) + event.OpenFDs*alpha
+		existing.ThreadCount = existing.ThreadCount*(1-alpha) + event.ThreadCount*alpha
 		if existing.Protocol == "" && event.Protocol != "" {
 			existing.Protocol = event.Protocol
 		}
@@ -291,6 +297,8 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 			RestartCount:      event.RestartCount,
 			CPUThrottling:     event.CPUThrottling,
 			GoroutineCount:    event.GoroutineCount,
+			OpenFDs:           event.OpenFDs,
+			ThreadCount:       event.ThreadCount,
 		}
 	}
 
