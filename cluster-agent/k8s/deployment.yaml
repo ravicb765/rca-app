@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-agent
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-agent
+  template:
+    metadata:
+      labels:
+        app: cluster-agent
+    spec:
+      containers:
+        - name: cluster-agent
+          image: ghcr.io/ravicb765/rca-app/cluster-agent:latest
+          ports:
+            - containerPort: 9100
+          env:
+            - name: PORT
+              value: "9100"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
