@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
@@ -19,6 +23,18 @@ func main() {
 	} else {
 		log.Println("eBPF objects loaded (or loader stub ran)")
 	}
+	defer func() {
+		if err := StopEBPFObjects(); err != nil {
+			log.Println("error stopping ebpf agent:", err)
+		}
+	}()
 
-	// TODO: push telemetry to server and implement exporters
+	// Wait for signals to gracefully exit
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	<-ctx.Done()
+	// give background goroutines a moment to stop
+	time.Sleep(1 * time.Second)
+	fmt.Println("node-agent shutting down")
 }

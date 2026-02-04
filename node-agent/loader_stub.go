@@ -8,3 +8,8 @@ func LoadEBPFObjects() error {
 	fmt.Println("EBPF loader not enabled; build with '-tags ebpf' to enable loading")
 	return nil
 }
+
+// StopEBPFObjects is a no-op when EBPF support is not compiled in.
+func StopEBPFObjects() error {
+	return nil
+}

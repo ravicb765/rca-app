@@ -3,31 +3,12 @@
 
 package main
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/cilium/ebpf"
-)
-
-// LoadEBPFObjects loads eBPF objects from node-agent/ebpf/*.o and verifies they can be loaded.
+// LoadEBPFObjects starts the EBPF agent (loads objects, attaches probes, and starts telemetry forwarding).
 func LoadEBPFObjects() error {
-	obj := "node-agent/ebpf/network_tracer.o"
-	if _, err := os.Stat(obj); os.IsNotExist(err) {
-		return fmt.Errorf("ebpf object not found: %s", obj)
-	}
+	return StartEBPFAgent()
+}
 
-	spec, err := ebpf.LoadCollectionSpec(obj)
-	if err != nil {
-		return fmt.Errorf("failed to load collection spec: %w", err)
-	}
-
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
-		return fmt.Errorf("failed to create collection: %w", err)
-	}
-	defer coll.Close()
-
-	// For now, we load and immediately close. Attaching to kprobes requires extra privileges and platform-specific logic.
-	return nil
+// StopEBPFObjects stops the running agent and cleans up resources.
+func StopEBPFObjects() error {
+	return StopEBPFAgent()
 }
