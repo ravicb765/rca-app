@@ -188,7 +188,7 @@ func (a *Agent) readMaps() map[string]any {
 				out[name] = map[string]any{"error": err.Error()}
 				continue
 			}
-			out[name] = map[string]any{"value": toHex(val)}
+			out[name] = map[string]any{"value": decodeValue(val)}
 		}
 	}
 	return out
