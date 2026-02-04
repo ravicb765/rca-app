@@ -14,7 +14,7 @@ jobs:
       - name: Install build deps (clang, libbpf, headers, bpftool)
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libbpf-dev linux-libc-dev linux-headers-generic pkg-config make build-essential libelf-dev bpftool
+          sudo apt-get install -y clang libbpf-dev linux-libc-dev linux-headers-generic pkg-config make build-essential libelf-dev
           # also attempt to install headers matching the running kernel; don't fail if not available
           sudo apt-get install -y linux-headers-$(uname -r) || true
 
