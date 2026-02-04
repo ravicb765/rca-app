@@ -1,0 +1,404 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "HTTP Request Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_http_requests_total[1m])) by (destination)",
+          "legendFormat": "{{destination}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "HTTP Error Rate (5xx)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_http_requests_total{status_code=~\"5..\"}[1m])) by (destination)",
+          "legendFormat": "{{destination}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "HTTP Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_http_latency_seconds_bucket[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "HTTP Body Size (Avg Bytes)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(node_agent_http_body_size_bytes_sum[5m]) / rate(node_agent_http_body_size_bytes_count[5m])",
+          "legendFormat": "{{destination}} {{direction}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "PostgreSQL Query Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_pg_queries_total[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Redis Command Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_redis_queries_total[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Redis Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_redis_query_latency_seconds_bucket[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Container CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "expr": "rate(node_agent_container_cpu_seconds_total[1m])",
+          "legendFormat": "{{container_name}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Container Memory RSS",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "targets": [
+        {
+          "expr": "node_agent_container_memory_rss_bytes",
+          "legendFormat": "{{container_name}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Container Disk I/O",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "targets": [
+        {
+          "expr": "rate(node_agent_container_disk_bytes_total[1m])",
+          "legendFormat": "{{container_name}} {{operation}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Container Network I/O",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "targets": [
+        {
+          "expr": "rate(node_agent_container_network_bytes_total[1m])",
+          "legendFormat": "{{container_name}} {{direction}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Container OOM Kills",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "targets": [
+        {
+          "expr": "increase(node_agent_container_oom_kills_total[1h])",
+          "legendFormat": "{{container_name}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Memcached Command Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 56 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_memcached_queries_total[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Memcached Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 56 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_memcached_query_latency_seconds_bucket[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "MySQL Query Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 64 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_mysql_queries_total[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "MySQL Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 64 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_mysql_query_latency_seconds_bucket[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "MongoDB Query Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 72 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_mongo_queries_total[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "MongoDB Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 72 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_mongo_query_latency_seconds_bucket[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "RabbitMQ Command Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 88 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_rabbitmq_queries_total[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "RabbitMQ Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 88 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_rabbitmq_query_latency_seconds_bucket[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Cassandra Query Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 96 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_cassandra_queries_total[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "Cassandra Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 96 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_cassandra_query_latency_seconds_bucket[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "CockroachDB Query Rate (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 104 },
+      "targets": [
+        {
+          "expr": "sum(rate(node_agent_pg_queries_total{destination=~\".*:26257\"}[1m])) by (destination, command)",
+          "legendFormat": "{{destination}} - {{command}}"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "title": "CockroachDB Latency (P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 104 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(node_agent_pg_query_latency_seconds_bucket{destination=~\".*:26257\"}[5m])) by (le, destination))",
+          "legendFormat": "{{destination}} P95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["rca-app"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Prometheus",
+        "hide": 0
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "RCA-App HTTP & PostgreSQL Metrics",
+  "uid": "rca-app-metrics",
+  "version": 1
+}

@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rca-app-alerts
+  namespace: observability
+  labels:
+    app: rca-app
+    # This label is often required for the Prometheus Operator to pick up the rule.
+    # Adjust 'release: prometheus' if your operator uses a different selector.
+    release: prometheus
+spec:
+  groups:
+  - name: rca-app-redis
+    rules:
+    - alert: HighRedisLatency
+      # Calculate P95 latency over 5m window. Alert if > 50ms (0.05s).
+      expr: histogram_quantile(0.95, sum(rate(node_agent_redis_query_latency_seconds_bucket[5m])) by (le, destination)) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High Redis latency on {{ $labels.destination }}"
+        description: "95th percentile latency is {{ $value | humanizeDuration }} (threshold 50ms)"
+  - name: rca-app-http
+    rules:
+    - alert: HighHttpErrorRate
+      expr: sum(rate(node_agent_http_requests_total{status_code=~"5.."}[5m])) by (destination) / sum(rate(node_agent_http_requests_total[5m])) by (destination) > 0.05
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High HTTP 5xx error rate on {{ $labels.destination }}"
+        description: "HTTP 5xx error rate is {{ $value | humanizePercentage }} (threshold 5%)"

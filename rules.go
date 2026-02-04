@@ -181,3 +181,69 @@ func (r *ThreadCountRule) Evaluate(app *servicemap.Application, metrics AppMetri
 	}
 	return true, fmt.Sprintf("Thread count %.0f is within limits", metrics.ThreadCount)
 }
+
+type MemcachedLatencyRule struct {
+	Threshold float64 // in ms
+}
+
+func (r *MemcachedLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.MemcachedLatency > r.Threshold {
+		return false, fmt.Sprintf("Memcached latency %.2fms exceeds threshold %.2fms", metrics.MemcachedLatency, r.Threshold)
+	}
+	return true, fmt.Sprintf("Memcached latency %.2fms is within limits", metrics.MemcachedLatency)
+}
+
+type MysqlLatencyRule struct {
+	Threshold float64 // in ms
+}
+
+func (r *MysqlLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.MysqlLatency > r.Threshold {
+		return false, fmt.Sprintf("MySQL latency %.2fms exceeds threshold %.2fms", metrics.MysqlLatency, r.Threshold)
+	}
+	return true, fmt.Sprintf("MySQL latency %.2fms is within limits", metrics.MysqlLatency)
+}
+
+type MongoLatencyRule struct {
+	Threshold float64 // in ms
+}
+
+func (r *MongoLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.MongoLatency > r.Threshold {
+		return false, fmt.Sprintf("MongoDB latency %.2fms exceeds threshold %.2fms", metrics.MongoLatency, r.Threshold)
+	}
+	return true, fmt.Sprintf("MongoDB latency %.2fms is within limits", metrics.MongoLatency)
+}
+
+type RabbitMQLatencyRule struct {
+	Threshold float64 // in ms
+}
+
+func (r *RabbitMQLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.RabbitMQLatency > r.Threshold {
+		return false, fmt.Sprintf("RabbitMQ latency %.2fms exceeds threshold %.2fms", metrics.RabbitMQLatency, r.Threshold)
+	}
+	return true, fmt.Sprintf("RabbitMQ latency %.2fms is within limits", metrics.RabbitMQLatency)
+}
+
+type RabbitMQQueueLengthRule struct {
+	Threshold float64 // count
+}
+
+func (r *RabbitMQQueueLengthRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.RabbitMQQueueLength > r.Threshold {
+		return false, fmt.Sprintf("RabbitMQ queue length %.0f exceeds threshold %.0f", metrics.RabbitMQQueueLength, r.Threshold)
+	}
+	return true, fmt.Sprintf("RabbitMQ queue length %.0f is within limits", metrics.RabbitMQQueueLength)
+}
+
+type CassandraLatencyRule struct {
+	Threshold float64 // in ms
+}
+
+func (r *CassandraLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.CassandraLatency > r.Threshold {
+		return false, fmt.Sprintf("Cassandra latency %.2fms exceeds threshold %.2fms", metrics.CassandraLatency, r.Threshold)
+	}
+	return true, fmt.Sprintf("Cassandra latency %.2fms is within limits", metrics.CassandraLatency)
+}

@@ -403,3 +403,52 @@ func TestThreadCountRule(t *testing.T) {
 	}
 	t.Error("expected High Thread Count to fail")
 }
+
+func TestRabbitMQQueueLengthRule(t *testing.T) {
+	engine := NewInspectionEngine(nil)
+	sm := servicemap.NewServiceMap()
+	appID := "rabbitmq-congested"
+	sm.Applications[appID] = &servicemap.Application{ID: appID, Name: "RabbitMQ Congested", Type: "rabbitmq"}
+
+	sm.Connections = append(sm.Connections, servicemap.Connection{
+		SourceApp:   "producer",
+		DestApp:     appID,
+		Protocol:    "rabbitmq",
+		QueueLength: 1500, // > 1000 threshold
+	})
+
+	engine.Run(sm)
+	results := engine.GetResults(appID)
+
+	for _, r := range results {
+		if r.Name == "High RabbitMQ Queue Length" && r.Status == "fail" {
+			return // Test passed
+		}
+	}
+	t.Error("expected High RabbitMQ Queue Length to fail")
+}
+
+func TestCassandraLatencyRule(t *testing.T) {
+	engine := NewInspectionEngine(nil)
+	sm := servicemap.NewServiceMap()
+	appID := "cassandra-slow"
+	sm.Applications[appID] = &servicemap.Application{ID: appID, Name: "Cassandra Slow", Type: "cassandra"}
+
+	sm.Connections = append(sm.Connections, servicemap.Connection{
+		SourceApp:   "client",
+		DestApp:     appID,
+		Protocol:    "cassandra",
+		RequestRate: 100,
+		Latency:     60, // > 50ms threshold
+	})
+
+	engine.Run(sm)
+	results := engine.GetResults(appID)
+
+	for _, r := range results {
+		if r.Name == "High Cassandra Latency" && r.Status == "fail" {
+			return // Test passed
+		}
+	}
+	t.Error("expected High Cassandra Latency to fail")
+}
