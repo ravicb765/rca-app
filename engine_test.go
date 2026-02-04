@@ -454,26 +454,32 @@ func TestCassandraLatencyRule(t *testing.T) {
 }
 
 func TestPostgresLatencyRule(t *testing.T) {
-	engine := NewInspectionEngine(nil)
-	sm := servicemap.NewServiceMap()
-	appID := "postgres-slow"
-	sm.Applications[appID] = &servicemap.Application{ID: appID, Name: "Postgres Slow", Type: "postgres"}
+	protocols := []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"}
 
-	sm.Connections = append(sm.Connections, servicemap.Connection{
-		SourceApp:   "client",
-		DestApp:     appID,
-		Protocol:    "postgres", // or mysql, cockroachdb, yugabytedb
-		RequestRate: 100,
-		Latency:     60, // > 50ms threshold
-	})
+	for _, proto := range protocols {
+		t.Run(proto, func(t *testing.T) {
+			engine := NewInspectionEngine(nil)
+			sm := servicemap.NewServiceMap()
+			appID := "db-slow-" + proto
+			sm.Applications[appID] = &servicemap.Application{ID: appID, Name: "DB Slow", Type: proto}
 
-	engine.Run(sm)
-	results := engine.GetResults(appID)
+			sm.Connections = append(sm.Connections, servicemap.Connection{
+				SourceApp:   "client",
+				DestApp:     appID,
+				Protocol:    proto,
+				RequestRate: 100,
+				Latency:     60, // > 50ms threshold
+			})
 
-	for _, r := range results {
-		if r.Name == "High Postgres-Compatible DB Latency" && r.Status == "fail" {
-			return // Test passed
-		}
+			engine.Run(sm)
+			results := engine.GetResults(appID)
+
+			for _, r := range results {
+				if r.Name == "High Postgres-Compatible DB Latency" && r.Status == "fail" {
+					return // Test passed
+				}
+			}
+			t.Errorf("expected High Postgres-Compatible DB Latency to fail for protocol %s", proto)
+		})
 	}
-	t.Error("expected High Postgres-Compatible DB Latency to fail")
 }

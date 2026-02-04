@@ -358,7 +358,7 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 		// For this example, let's assume we can get it from a hypothetical field or metric
 		// s.maxMemcachedLat = ... (This would require updating Connection struct in servicemap)
 
-		if conn.Protocol == "mysql" || conn.Protocol == "mariadb" || conn.Protocol == "cockroachdb" || conn.Protocol == "yugabytedb" {
+		if conn.Protocol == "postgres" || conn.Protocol == "mysql" || conn.Protocol == "mariadb" || conn.Protocol == "cockroachdb" || conn.Protocol == "yugabytedb" {
 			s.totalMysqlLat += conn.Latency * conn.RequestRate
 			s.totalMysqlReq += conn.RequestRate
 		}
