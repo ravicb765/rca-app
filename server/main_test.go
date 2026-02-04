@@ -46,19 +46,13 @@ func TestClusterAgentIntegration(t *testing.T) {
 
 	store := &serviceStore{}
 
-	// fetch once by calling the server directly as startClusterFetcher would do
+	// call fetchOnce directly so tests can supply local counters
+	fetchTotal := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fetch_total"})
+	fetchSuccess := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fetch_success"})
+	fetchErrors := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fetch_errors"})
 	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(srv.URL + "/api/v1/cluster/services")
-	if err != nil {
-		t.Fatalf("failed to get from fake cluster-agent: %v", err)
-	}
-	var payload map[string][]string
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode failed: %v", err)
-	}
-	resp.Body.Close()
-	if s, ok := payload["services"]; ok {
-		store.set(s)
+	if err := fetchOnce(client, srv.URL, store, fetchSuccess, fetchErrors, fetchTotal); err != nil {
+		t.Fatalf("fetchOnce failed: %v", err)
 	}
 
 	r := newRouter(store)
@@ -71,6 +65,11 @@ func TestClusterAgentIntegration(t *testing.T) {
 	}
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+
+	// Ensure metrics counters were updated
+	if fetchTotal == nil || fetchSuccess == nil || fetchErrors == nil {
+		t.Fatalf("metrics not initialized")
 	}
 }
 

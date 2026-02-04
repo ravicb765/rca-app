@@ -3,12 +3,15 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Simple in-memory service map store
@@ -71,30 +74,62 @@ func newRouter(store *serviceStore) *gin.Engine {
 	return r
 }
 
-func startClusterFetcher(store *serviceStore, stopCh <-chan struct{}) {
+// fetchOnce performs a single cluster-agent fetch and updates metrics and store.
+func fetchOnce(client *http.Client, clusterAgent string, store *serviceStore, success, errors, total prometheus.Counter) error {
+	if clusterAgent == "" {
+		clusterAgent = "http://cluster-agent:9100"
+	}
+	total.Inc()
+	resp, err := client.Get(clusterAgent + "/api/v1/cluster/services")
+	if err != nil {
+		errors.Inc()
+		log.Printf("cluster fetch error: %v", err)
+		return err
+	}
+	defer resp.Body.Close()
+	var payload map[string][]string
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		errors.Inc()
+		log.Printf("cluster fetch decode error: %v", err)
+		return err
+	}
+	if s, ok := payload["services"]; ok {
+		store.set(s)
+		success.Inc()
+	}
+	return nil
+}
+
+func startClusterFetcher(store *serviceStore, stopCh <-chan struct{}, success, errors, total prometheus.Counter) {
 	clusterAgent := os.Getenv("CLUSTER_AGENT_URL")
 	if clusterAgent == "" {
 		clusterAgent = "http://cluster-agent:9100"
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
+	baseDelay := 5 * time.Second
+	maxDelay := 120 * time.Second
+	delay := baseDelay
 	for {
 		select {
 		case <-stopCh:
 			return
 		default:
-			resp, err := client.Get(clusterAgent + "/api/v1/cluster/services")
-			if err != nil {
-				log.Printf("cluster fetch error: %v", err)
-				time.Sleep(30 * time.Second)
+			if err := fetchOnce(client, clusterAgent, store, success, errors, total); err != nil {
+				// exponential backoff with jitter
+				j := time.Duration(rand.Int63n(int64(delay)))
+				wait := delay + j/2
+				if wait > maxDelay {
+					wait = maxDelay
+				}
+				log.Printf("fetch failed, backing off %s", wait)
+				time.Sleep(wait)
+				if delay < maxDelay {
+					delay *= 2
+				}
 				continue
 			}
-			var payload map[string][]string
-			if err := json.NewDecoder(resp.Body).Decode(&payload); err == nil {
-				if s, ok := payload["services"]; ok {
-					store.set(s)
-				}
-			}
-			_ = resp.Body.Close()
+			// success -> reset delay and wait a fixed interval
+			delay = baseDelay
 			time.Sleep(30 * time.Second)
 		}
 	}
@@ -102,7 +137,26 @@ func startClusterFetcher(store *serviceStore, stopCh <-chan struct{}) {
 
 func main() {
 	store := &serviceStore{}
+
+	// Prometheus metrics for server-side ingestion
+	reg := prometheus.NewRegistry()
+	fetchTotal := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "server_cluster_fetch_total",
+		Help: "Total attempts to fetch services from cluster-agent",
+	})
+	fetchSuccess := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "server_cluster_fetch_success_total",
+		Help: "Total successful fetches from cluster-agent",
+	})
+	fetchErrors := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "server_cluster_fetch_errors_total",
+		Help: "Total errors while fetching from cluster-agent",
+	})
+	reg.MustRegister(fetchTotal, fetchSuccess, fetchErrors)
+
 	r := newRouter(store)
+	// add server metrics endpoint bound to registry
+	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -110,7 +164,7 @@ func main() {
 	}
 
 	stopCh := make(chan struct{})
-	go startClusterFetcher(store, stopCh)
+	go startClusterFetcher(store, stopCh, fetchSuccess, fetchErrors, fetchTotal)
 
 	// shutdown handling omitted for brevity
 	r.Run(":" + port)

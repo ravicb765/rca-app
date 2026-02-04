@@ -2,7 +2,10 @@ module github.com/ravicb765/rca-app/server
 
 go 1.21
 
-require github.com/gin-gonic/gin v1.9.0
+require (
+	github.com/gin-gonic/gin v1.9.0
+	github.com/prometheus/client_golang v1.16.0
+)
 
 require (
 	github.com/bytedance/sonic v1.8.0 // indirect

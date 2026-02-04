@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rca-server
+  namespace: observability
+  labels:
+    app: rca-server
+spec:
+  selector:
+    app: rca-server
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
