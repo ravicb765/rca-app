@@ -199,6 +199,18 @@ go build -o server main.go
 ./server
 ```
 
+## Monitoring quick HOWTO
+If you operate Prometheus via the Operator (kube-prometheus-stack), apply the ServiceMonitor manifests to let Prometheus discover RCA-App metrics:
+
+```bash
+kubectl apply -f monitoring/servicemonitor-cluster-agent.yaml
+kubectl apply -f monitoring/servicemonitor-server.yaml
+```
+
+If your cluster enforces RBAC, adapt and apply `monitoring/servicemonitor-rbac.yaml` to ensure Prometheus has rights to `get,list,watch` the ServiceMonitor CRD and `services/endpoints/pods` in the `observability` namespace.
+
+For CI verification, see the manual workflow: `.github/workflows/monitoring-integration.yml` (trigger via workflow_dispatch).
+
 ### ML Service (Python)
 
 ```bash

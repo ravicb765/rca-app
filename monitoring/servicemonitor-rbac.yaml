@@ -1,0 +1,27 @@
+# Example RBAC to allow Prometheus (operator-managed) to read ServiceMonitors and local services
+# Adjust the 'subjects' section to match your Prometheus service account and namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-observability-reader
+rules:
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-observability-reader-binding
+subjects:
+  # Update this subject to the service account used by your Prometheus instance
+  - kind: ServiceAccount
+    name: prometheus-kube-prometheus-prometheus
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: prometheus-observability-reader
+  apiGroup: rbac.authorization.k8s.io
