@@ -12,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/ravicb765/rca-app/server/servicemap"
 )
 
 // Simple in-memory service map store
@@ -33,17 +35,57 @@ func (s *serviceStore) list() []string {
 	return append([]string{}, s.services...)
 }
 
+// connStore holds observed connections from agents
+type connStore struct {
+	conns []servicemap.Connection
+	mu    sync.RWMutex
+}
+
+func (c *connStore) add(conn servicemap.Connection) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.conns = append(c.conns, conn)
+}
+
+func (c *connStore) addAll(conns []servicemap.Connection) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.conns = append(c.conns, conns...)
+}
+
+func (c *connStore) list() []servicemap.Connection {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]servicemap.Connection, len(c.conns))
+	copy(out, c.conns)
+	return out
+}
+
 // newRouter creates the HTTP handlers. Exported for testing.
 func newRouter(store *serviceStore) *gin.Engine {
 	r := gin.Default()
 
+	// connection store used to build service map from agent events
+	cstore := &connStore{}
+
 	r.GET("/api/v1/servicemap", func(c *gin.Context) {
-		// merge local static and cluster-agent-sourced services
+		// build a service map from observed connections
+		sm := servicemap.BuildServiceMap(cstore.list())
+
+		// retain backward compatible services list (cluster-agent or static)
 		svc := store.list()
 		if len(svc) == 0 {
-			svc = []string{"service-a", "service-b"}
+			// if we have a generated service map, derive a list
+			if len(sm.Applications) > 0 {
+				for id := range sm.Applications {
+					svc = append(svc, id)
+				}
+			} else {
+				svc = []string{"service-a", "service-b"}
+			}
 		}
-		c.JSON(http.StatusOK, gin.H{"services": svc})
+
+		c.JSON(http.StatusOK, gin.H{"services": svc, "servicemap": sm})
 	})
 
 	r.GET("/api/v1/applications", func(c *gin.Context) {
@@ -61,14 +103,30 @@ func newRouter(store *serviceStore) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"received": true})
 	})
 
-	// Agent event endpoint used by perf readers
+	// Agent event endpoint used by perf readers - accepts either a single connection
+	// or an array of connections and stores them for building the service map
 	r.POST("/api/v1/agent/event", func(c *gin.Context) {
-		var payload map[string]any
-		if err := c.BindJSON(&payload); err != nil {
+		raw, err := c.GetRawData()
+		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"received": true})
+
+		var conns []servicemap.Connection
+		if err := json.Unmarshal(raw, &conns); err == nil {
+			cstore.addAll(conns)
+			c.JSON(http.StatusOK, gin.H{"received": true, "added": len(conns)})
+			return
+		}
+
+		var conn servicemap.Connection
+		if err := json.Unmarshal(raw, &conn); err == nil {
+			cstore.add(conn)
+			c.JSON(http.StatusOK, gin.H{"received": true, "added": 1})
+			return
+		}
+
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 	})
 
 	return r

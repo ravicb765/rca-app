@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func TestServiceMap(t *testing.T) {
@@ -87,13 +89,29 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	// event
-	payload = []byte(`{"map":"m","cpu":0,"data":"0xdeadbeef"}`)
+	// event - single connection
+	payload = []byte(`{"source_app":"frontend","dest_app":"backend","protocol":"http","request_rate":100}`)
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// GET service map and assert the connection resulted in an application
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if _, ok := resp["servicemap"]; !ok {
+		t.Fatalf("expected servicemap in response")
 	}
 }
