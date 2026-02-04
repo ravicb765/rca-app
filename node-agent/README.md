@@ -33,6 +33,9 @@ Notes
 - The agent will also read `PERF_EVENT_ARRAY` maps and forward perf records to `$RCA_APP_ENDPOINT/api/v1/agent/event` as JSON payloads.
 - Cleanup is attempted on shutdown; if attachments fail you will see warnings in logs.
 
+Runner provisioning helper
+- Use `scripts/setup-runner.sh` to install packages and register a privileged self-hosted runner (label: `ebpf`) for this repo. Run as root on a test VM and pass `GITHUB_TOKEN` or have `gh` configured. See the script header for usage details.
+
 Safety
 
 - Loading and attaching eBPF programs requires root privileges and appropriate kernel support. Use an isolated test VM (kernel >= 5.4) or privileged CI runner when running these steps.
