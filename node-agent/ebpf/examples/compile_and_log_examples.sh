@@ -15,7 +15,17 @@ for f in *.c; do
   o="${f%.c}.o"
   log="logs/${f%.c}.compile.log"
   echo "Compiling $f -> $o (log: $log)"
-  clang -O2 -target bpf -c "$f" -o "$o" 2>"$log" || true
+
+  EXTRA_INCLUDES=""
+  # Add common system include locations so clang can find asm/types.h and kernel headers
+  if [ -d "/usr/include/x86_64-linux-gnu" ]; then
+    EXTRA_INCLUDES="$EXTRA_INCLUDES -I/usr/include/x86_64-linux-gnu"
+  fi
+  if [ -d "/usr/src/linux-headers-$(uname -r)/include" ]; then
+    EXTRA_INCLUDES="$EXTRA_INCLUDES -I/usr/src/linux-headers-$(uname -r)/include"
+  fi
+
+  clang -O2 -target bpf -I/usr/include $EXTRA_INCLUDES -c "$f" -o "$o" 2>"$log" || true
   if [ -s "$log" ]; then
     echo "--- compiler output for $f (tail) ---"
     tail -n 80 "$log"
