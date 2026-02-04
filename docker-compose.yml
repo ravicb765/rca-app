@@ -1,28 +1,53 @@
 version: '3.8'
+
 services:
+  node-agent:
+    build: ./node-agent
+    privileged: true
+    network_mode: host
+    pid: host
+    volumes:
+      - /sys:/sys:ro
+      - /sys/kernel/debug:/sys/kernel/debug
+    environment:
+      - RCA_APP_ENDPOINT=http://localhost:8080
+
   server:
     build: ./server
     ports:
       - "8080:8080"
+    depends_on:
+      - clickhouse
+      - prometheus
     environment:
-      - PORT=8080
+      - CLICKHOUSE_URL=clickhouse:9000
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ML_SERVICE_URL=http://ml-service:5000
+
   ml-service:
     build: ./ml-service
     ports:
       - "5000:5000"
-  node-agent:
-    build: ./node-agent
-    environment:
-      - RCA_APP_ENDPOINT=http://server:8080
-  backstage:
-    image: backstage/backstage:latest
-    ports:
-      - "7000:7000"
+
   clickhouse:
-    image: yandex/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:latest
     ports:
+      - "9000:9000"
       - "8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+
   prometheus:
     image: prom/prometheus:latest
     ports:
       - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-remote-write-receiver'
+    volumes:
+      - prometheus-data:/prometheus
+
+volumes:
+  clickhouse-data:
+  prometheus-data:

@@ -1,0 +1,46 @@
+name: Go Tests
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'server/**'
+      - 'node-agent/**'
+      - 'cluster-agent/**'
+  pull_request:
+    branches: [ "main", "master" ]
+    paths:
+      - 'server/**'
+      - 'node-agent/**'
+      - 'cluster-agent/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Test Server
+      run: |
+        cd server
+        go mod download
+        go test -v ./...
+
+    - name: Test Cluster Agent
+      run: |
+        cd cluster-agent
+        go mod download
+        go test -v ./...
+
+    - name: Build Node Agent
+      run: |
+        cd node-agent
+        go mod download
+        # We build to ensure compilation succeeds. 
+        # Note: Runtime eBPF loading requires privileges not available here.
+        go build -v .

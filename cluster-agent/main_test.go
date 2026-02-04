@@ -8,7 +8,7 @@ import (
 )
 
 func TestServicesEndpoint_NoClient(t *testing.T) {
-	r := newRouter(nil)
+	r := NewClusterAgent(nil).setupRouter()
 	s := httptest.NewServer(r)
 	defer s.Close()
 
@@ -22,7 +22,7 @@ func TestServicesEndpoint_NoClient(t *testing.T) {
 }
 
 func TestPodsEndpoint_NoClient(t *testing.T) {
-	r := newRouter(nil)
+	r := NewClusterAgent(nil).setupRouter()
 	s := httptest.NewServer(r)
 	defer s.Close()
 
@@ -35,8 +35,22 @@ func TestPodsEndpoint_NoClient(t *testing.T) {
 	}
 }
 
+func TestProfilesEndpoint_NoClient(t *testing.T) {
+	r := NewClusterAgent(nil).setupRouter()
+	s := httptest.NewServer(r)
+	defer s.Close()
+
+	resp, err := http.Get(s.URL + "/api/v1/cluster/profiles")
+	if err != nil {
+		t.Fatalf("GET profiles failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", resp.StatusCode)
+	}
+}
+
 func TestMetricsEndpoint(t *testing.T) {
-	r := newRouter(nil)
+	r := NewClusterAgent(nil).setupRouter()
 	s := httptest.NewServer(r)
 	defer s.Close()
 

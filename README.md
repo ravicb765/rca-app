@@ -1,84 +1,56 @@
 # RCA-App: Observability Platform with AI-Powered Root Cause Analysis
 
-Note: This repository includes a CI workflow that compiles eBPF sources and (on self-hosted runners labeled `ebpf`) attempts to verify loading compiled objects. See `.github/workflows/ebpf-verify.yml` for details.
+**RCA-App** is an open-source observability platform designed to provide deep insights into your infrastructure and applications with zero manual instrumentation. By leveraging **eBPF**, it automatically captures metrics, logs, traces, and profiles. It then uses an **AI-powered engine** to detect anomalies and identify root causes of incidents in real-time.
 
-### Agent event format
+## 🚀 Features
 
-Agents may post connection telemetry in multiple formats to the server `/api/v1/agent/event` endpoint:
-- Top-level envelope: `{"connections":[ ... ]}`
-- An array of connections: `[ {...}, {...} ]`
-- A single connection object: `{...}`
-- Perf/map events: `{"map":"name","data":"0x..."}` (accepted by server for forwarding to specialized consumers)
+- **Zero-Instrumentation Observability**: Uses eBPF to collect telemetry (HTTP, gRPC, DBs) without code changes.
+- **Dynamic Service Map**: Automatically builds a real-time dependency graph of your services.
+- **Circular Dependency Detection**: Automatically identifies and alerts on circular dependencies in your service architecture.
+- **AI Root Cause Analysis**: ML models detect anomalies and correlate them with logs and traces to pinpoint issues.
+- **Unified Telemetry**: Combines metrics, logs, distributed traces, and continuous profiling in one platform.
+- **Kubernetes Native**: Designed to run seamlessly on Kubernetes clusters.
 
-The service map builder also contains simple heuristics to classify services (e.g., name hints like `postgres`, `redis`, `mysql`, or protocol hints such as `protocol: "http"`).
+## 🏗 Architecture
 
-A production-ready observability and APM platform with automated root cause analysis.
+The platform consists of the following components:
 
-## Project Structure
+- **Node Agent**: Runs as a DaemonSet, collecting low-level telemetry via eBPF.
+- **Cluster Agent**: Collects K8s metadata and cloud-specific metrics.
+- **Server**: Aggregates data, builds service maps, and exposes APIs.
+- **ML Service**: Performs anomaly detection and root cause analysis.
+- **Backstage Portal**: Provides a developer-friendly UI for visualization.
 
-```
-rca-app/
-├── node-agent/          # eBPF-based data collection agent
-│   ├── main.go
-│   ├── Dockerfile
-│   └── go.mod
-├── server/              # Main backend application
-│   ├── main.go
-│   ├── Dockerfile
-│   └── go.mod
-├── ml-service/          # AI/ML service for root cause analysis
-│   ├── main.py
-│   ├── Dockerfile
-│   └── requirements.txt
-├── backstage-portal/    # Backstage developer portal (Web UI)
-│   ├── packages/
-│   │   ├── app/        # Frontend application
-│   │   └── backend/    # Backend API
-│   └── plugins/        # Custom RCA-App plugins
-│       ├── service-map/
-│       ├── ai-analysis/
-│       ├── inspections/
-│       ├── profiling/
-│       └── cost-monitoring/
-├── docker-compose.yml   # Local development setup
-└── README.md
-```
+## 🛠 Quick Start
 
-## Features
+### Prerequisites
+- Docker & Docker Compose
+- Go 1.22+ (for local build)
+- Python 3.10+ (for ML service)
 
-### Core Features
-- ✅ **Zero-instrumentation observability** with eBPF
-- ✅ **Service map generation** from network traffic
-- ✅ **Metrics collection** (Prometheus-compatible)
-- ✅ **Log aggregation** with pattern clustering
-- ✅ **Distributed tracing** (OpenTelemetry-compatible)
-- ✅ **Continuous profiling**
-- ✅ **AI-powered root cause analysis**
+### Running Locally
 
-### Advanced Features
-- 🚧 **Predefined inspections** (health checks)
-- 🚧 **SLO tracking**
-- 🚧 **Cost monitoring**
-- 🚧 **Deployment tracking**
-- 🚧 **Alerting** (Slack, PagerDuty, etc.)
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/ravicb765/rca-app.git
+   cd rca-app
+   ```
 
-## Prerequisites
+2. **Start the stack**
+   ```bash
+   docker-compose up -d
+   ```
 
-- **Docker** and **Docker Compose**
-- **Go** 1.21+ (for building node-agent and server)
-- **Python** 3.10+ (for ML service)
-- **Kubernetes** cluster (for production deployment)
-- Linux kernel 5.4+ with eBPF support
+3. **Access the Dashboard**
+   - The API Server is available at `http://localhost:8080`
+   - Check the Service Map: `http://localhost:8080/api/v1/servicemap`
 
-## Quick Start
+### Simulating Traffic
 
-### 1. Clone and Setup
+You can run the included simulation script to generate synthetic incidents:
 
 ```bash
-cd rca-app
-
-# Create necessary directories
-mkdir -p clickhouse/init.sql prometheus web-ui
+python3 scripts/simulate_incidents.py
 ```
 
 ### 2. Create Configuration Files

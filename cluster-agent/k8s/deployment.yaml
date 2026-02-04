@@ -1,11 +1,38 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-agent
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-agent
+rules:
+- apiGroups: [""]
+  resources: ["services", "pods", "nodes", "namespaces"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-agent
+subjects:
+- kind: ServiceAccount
+  name: cluster-agent
+  namespace: observability
+roleRef:
+  kind: ClusterRole
+  name: cluster-agent
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cluster-agent
   namespace: observability
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "9100"
+  labels:
+    app: cluster-agent
 spec:
   replicas: 1
   selector:
@@ -15,33 +42,34 @@ spec:
     metadata:
       labels:
         app: cluster-agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
     spec:
+      serviceAccountName: cluster-agent
       containers:
-        - name: cluster-agent
-          image: ghcr.io/ravicb765/rca-app/cluster-agent:latest
-          ports:
-            - containerPort: 9100
-          env:
-            - name: PORT
-              value: "9100"
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: 9100
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 9100
-            initialDelaySeconds: 15
-            periodSeconds: 20
-            failureThreshold: 5
-          resources:
-            requests:
-              cpu: "200m"
-              memory: "256Mi"
-            limits:
-              cpu: "1"
-              memory: "512Mi"
+      - name: cluster-agent
+        image: cluster-agent:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9100
+          name: http
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9100
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9100
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "64Mi"
+            cpu: "100m"

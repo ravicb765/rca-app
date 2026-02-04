@@ -1,12 +1,10 @@
-name: Integration tests
+name: Integration Tests
 
 on:
   push:
+    branches: [ "main", "master" ]
   pull_request:
-    paths:
-      - 'docker-compose.test.yml'
-      - 'server/**'
-      - 'ml-service/**'
+    branches: [ "main", "master" ]
 
 jobs:
   integration:
@@ -14,10 +12,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure Docker Compose
-        run: docker compose version
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Run integration tests
+      - name: Start services
+        run: docker-compose up -d --build
+
+      - name: Wait for services
         run: |
-          chmod +x ./scripts/run-integration-tests.sh
-          ./scripts/run-integration-tests.sh
+          echo "Waiting for services to be ready..."
+          timeout 60s bash -c 'until curl -s http://localhost:8080/api/v1/applications > /dev/null; do sleep 2; done'
+          timeout 60s bash -c 'until curl -s http://localhost:5000/health > /dev/null; do sleep 2; done'
+
+      - name: Run ML Simulation
+        run: python3 scripts/simulate_incidents.py
+
+      - name: Inject Server Telemetry
+        run: |
+          curl -X POST http://localhost:8080/api/v1/agent/event \
+          -H "Content-Type: application/json" \
+          -d '{"connections": [{"src_ip": "10.0.0.1", "dst_ip": "10.0.0.2", "src_port": 12345, "dst_port": 80, "protocol": "http", "request_rate": 10.0}]}'
+
+      - name: Verify Service Map
+        run: |
+          sleep 2
+          RESPONSE=$(curl -s http://localhost:8080/api/v1/servicemap)
+          echo "Service Map Response: $RESPONSE"
+          # We expect external-10.0.0.1 because k8s metadata is empty in this test env
+          if [[ "$RESPONSE" != *"external-10.0.0.1"* ]]; then
+            echo "Error: Expected external service not found in service map"
+            exit 1
+          fi
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker-compose logs

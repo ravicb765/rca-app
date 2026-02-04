@@ -95,23 +95,35 @@ This guide provides a comprehensive blueprint for building an observability and 
 // Example structure for Node Agent
 package agent
 
+import (
+    "context"
+    "sync"
+)
+
 type NodeAgent struct {
+    ctx            context.Context
+    cancel         context.CancelFunc
+    wg             sync.WaitGroup
     ebpfManager    *EBPFManager
     metricsExporter *MetricsExporter
     logCollector   *LogCollector
     profiler       *ContinuousProfiler
     config         *Config
+    eventChan      chan interface{}
 }
 
 type EBPFManager struct {
     programs       map[string]*ebpf.Program
+    perfReaders    map[string]*perf.Reader
     networkTracer  *NetworkTracer
     processTracer  *ProcessTracer
 }
 
 type NetworkTracer struct {
-    connections    map[string]*Connection
-    requestTracker *RequestTracker
+    // Conntrack table from eBPF map
+    conntrackMap   *ebpf.Map
+    // Channel to send aggregated connection stats
+    statsChan      chan<- ConnectionStats
 }
 
 type RequestTracker struct {
@@ -150,6 +162,7 @@ package clusteragent
 
 type ClusterAgent struct {
     k8sClient      *kubernetes.Clientset
+    informers      informers.SharedInformerFactory
     dbDiscovery    *DatabaseDiscovery
     cloudIntegration *CloudIntegration
     profileScraper *ProfileScraper
@@ -466,14 +479,14 @@ requirements = [
 
 ### Frontend
 
-**Framework**: **Vue.js 3** or **React**
-
+**Framework**: **Vue.js 3** or **React** or **Backstage**
 **Key Technologies**:
 - **D3.js** / **Cytoscape.js** - Service map visualization
 - **ECharts** / **Plotly** - Charts and graphs
 - **WebSocket** - Real-time updates
 - **TailwindCSS** - Styling
-
+- **Backstage** - refer BACKSTAGE-INTEGREATION.md
+  
 ### Databases
 
 1. **ClickHouse** - Logs, traces, profiles (columnar storage)
@@ -545,41 +558,38 @@ int trace_http_request(struct pt_regs *ctx) {
 **Algorithm**:
 
 ```go
-func BuildServiceMap(connections []Connection) *ServiceMap {
-    serviceMap := NewServiceMap()
+type ServiceMapBuilder struct {
+    // State
+    services    map[string]*Service
+    connections map[string]*Connection
     
-    // Step 1: Identify all listening processes as services
-    services := make(map[string]*Service)
-    for _, conn := range connections {
-        if conn.State == "LISTEN" {
-            service := &Service{
-                Name: inferServiceName(conn),
-                Address: conn.LocalAddr,
-                Port: conn.LocalPort,
-            }
-            services[service.ID()] = service
-        }
+    // Metadata cache
+    k8sMetadata *K8sMetadataCache
+}
+
+func (b *ServiceMapBuilder) Update(events []TelemetryEvent) *ServiceMap {
+    // 1. Process new events to update state
+    for _, event := range events {
+        b.processEvent(event)
     }
     
-    // Step 2: Map client connections to services
-    for _, conn := range connections {
-        if conn.State == "ESTABLISHED" {
-            client := findProcess(conn.LocalAddr, conn.LocalPort)
-            server := findService(services, conn.RemoteAddr, conn.RemotePort)
-            
-            if client != nil && server != nil {
-                serviceMap.AddConnection(client, server, conn.Stats)
-            }
-        }
-    }
+    // 2. Prune stale connections
+    b.pruneStale()
     
-    // Step 3: Classify services by protocol
-    for _, service := range services {
-        service.Type = classifyService(service.Port, service.Traffic)
-        serviceMap.AddService(service)
-    }
+    // 3. Build graph snapshot
+    return b.buildGraph()
+}
+
+func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
+    // Correlate source IP/Port to Process/Pod
+    src := b.k8sMetadata.LookupPod(event.SrcIP)
+    dst := b.k8sMetadata.LookupPod(event.DstIP)
     
-    return serviceMap
+    if src != nil && dst != nil {
+        connKey := fmt.Sprintf("%s->%s", src.ID, dst.ID)
+        // Update connection stats (requests, latency, errors)
+        b.connections[connKey].Merge(event.Stats)
+    }
 }
 ```
 

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -17,24 +16,70 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/ravicb765/rca-app/server/inspections"
 	"github.com/ravicb765/rca-app/server/servicemap"
+	"github.com/ravicb765/rca-app/server/slo"
 )
 
-var kvRe = regexp.MustCompile(`(src|source|dst|dest|proto)=([^\s]+)`) 
+var kvRe = regexp.MustCompile(`(src|source|dst|dest|proto)=([^\s]+)`)
 
-// decodePerfRaw tries to interpret raw bytes as one of: JSON array/object, ascii key=value, or a binary conn_event
-func decodePerfRaw(b []byte) ([]servicemap.Connection, error) {
-	// Try JSON
-	var conns []servicemap.Connection
-	if err := json.Unmarshal(b, &conns); err == nil {
-		return conns, nil
+// MetadataCache implements servicemap.K8sMetadataCache
+type MetadataCache struct {
+	mu   sync.RWMutex
+	pods map[string]*servicemap.Instance
+}
+
+func NewMetadataCache() *MetadataCache {
+	return &MetadataCache{
+		pods: make(map[string]*servicemap.Instance),
 	}
-	var conn servicemap.Connection
-	if err := json.Unmarshal(b, &conn); err == nil {
-		return []servicemap.Connection{conn}, nil
+}
+
+func (m *MetadataCache) LookupPod(ip string) *servicemap.Instance {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.pods[ip]
+}
+
+type PodInfo struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	IP        string `json:"ip"`
+	Node      string `json:"node"`
+}
+
+func (m *MetadataCache) UpdatePods(pods []PodInfo) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Rebuild cache to avoid stale IPs
+	m.pods = make(map[string]*servicemap.Instance)
+	for _, p := range pods {
+		if p.IP != "" {
+			m.pods[p.IP] = &servicemap.Instance{
+				ID:        p.Namespace + "/" + p.Name,
+				PodName:   p.Name,
+				Namespace: p.Namespace,
+				NodeName:  p.Node,
+			}
+		}
+	}
+}
+
+// decodePerfRawToEvents tries to interpret raw bytes as one of: JSON array/object, ascii key=value, or a binary conn_event
+func decodePerfRawToEvents(b []byte) ([]servicemap.TelemetryEvent, error) {
+	// Try JSON
+	var events []servicemap.TelemetryEvent
+	if err := json.Unmarshal(b, &events); err == nil {
+		return events, nil
+	}
+	var event servicemap.TelemetryEvent
+	if err := json.Unmarshal(b, &event); err == nil {
+		return []servicemap.TelemetryEvent{event}, nil
 	}
 	// Try ascii key=value parsing
 	sb := string(b)
@@ -51,8 +96,9 @@ func decodePerfRaw(b []byte) ([]servicemap.Connection, error) {
 			dst = m["dest"]
 		}
 		proto := m["proto"]
-		c := servicemap.Connection{SourceApp: src, DestApp: dst, Protocol: proto}
-		return []servicemap.Connection{c}, nil
+		// For KV parsing, we treat src/dst as IPs if possible, or the builder will handle them as external
+		e := servicemap.TelemetryEvent{SrcIP: src, DstIP: dst, Protocol: proto}
+		return []servicemap.TelemetryEvent{e}, nil
 	}
 	// Try binary layout: IPv6 first: struct { u8 saddr[16]; u8 daddr[16]; u16 sport; u16 dport; u64 ts_ns }
 	if len(b) >= 44 {
@@ -60,10 +106,9 @@ func decodePerfRaw(b []byte) ([]servicemap.Connection, error) {
 		dstIP := net.IP(b[16:32]).String()
 		sport := binary.LittleEndian.Uint16(b[32:34])
 		dport := binary.LittleEndian.Uint16(b[34:36])
-		src := fmt.Sprintf("%s:%d", srcIP, sport)
-		dst := fmt.Sprintf("%s:%d", dstIP, dport)
-		c6 := servicemap.Connection{SourceApp: src, DestApp: dst, Protocol: "tcp", Latency: 0}
-		return []servicemap.Connection{c6}, nil
+
+		e6 := servicemap.TelemetryEvent{SrcIP: srcIP, DstIP: dstIP, SrcPort: sport, DstPort: dport, Protocol: "tcp"}
+		return []servicemap.TelemetryEvent{e6}, nil
 	}
 
 	// IPv4 layout: struct { u32 saddr; u32 daddr; u16 sport; u16 dport; u64 ts_ns }
@@ -72,32 +117,31 @@ func decodePerfRaw(b []byte) ([]servicemap.Connection, error) {
 		dstIP := net.IP(b[4:8]).String()
 		sport := binary.LittleEndian.Uint16(b[8:10])
 		dport := binary.LittleEndian.Uint16(b[10:12])
-		src := fmt.Sprintf("%s:%d", srcIP, sport)
-		dst := fmt.Sprintf("%s:%d", dstIP, dport)
-		c2 := servicemap.Connection{SourceApp: src, DestApp: dst, Protocol: "tcp", Latency: 0}
-		return []servicemap.Connection{c2}, nil
+
+		e2 := servicemap.TelemetryEvent{SrcIP: srcIP, DstIP: dstIP, SrcPort: sport, DstPort: dport, Protocol: "tcp"}
+		return []servicemap.TelemetryEvent{e2}, nil
 	}
 	return nil, nil
 }
 
 // decodePerfData attempts to decode hex-encoded perf/map data into connections.
 // It decodes the hex string and calls decodePerfRaw on the bytes.
-func decodePerfData(hexStr string) ([]servicemap.Connection, error) {
+func decodePerfData(hexStr string) ([]servicemap.TelemetryEvent, error) {
 	s := strings.TrimPrefix(hexStr, "0x")
 	b, err := hex.DecodeString(s)
 	if err != nil {
 		return nil, err
 	}
-	return decodePerfRaw(b)
+	return decodePerfRawToEvents(b)
 }
 
 // decodePerfBase64 decodes base64 payloads and calls decodePerfRaw
-func decodePerfBase64(b64 string) ([]servicemap.Connection, error) {
+func decodePerfBase64(b64 string) ([]servicemap.TelemetryEvent, error) {
 	b, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return nil, err
 	}
-	return decodePerfRaw(b)
+	return decodePerfRawToEvents(b)
 }
 
 // Simple in-memory service map store
@@ -119,42 +163,13 @@ func (s *serviceStore) list() []string {
 	return append([]string{}, s.services...)
 }
 
-// connStore holds observed connections from agents
-type connStore struct {
-	conns []servicemap.Connection
-	mu    sync.RWMutex
-}
-
-func (c *connStore) add(conn servicemap.Connection) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.conns = append(c.conns, conn)
-}
-
-func (c *connStore) addAll(conns []servicemap.Connection) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.conns = append(c.conns, conns...)
-}
-
-func (c *connStore) list() []servicemap.Connection {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	out := make([]servicemap.Connection, len(c.conns))
-	copy(out, c.conns)
-	return out
-}
-
 // newRouter creates the HTTP handlers. Exported for testing.
-func newRouter(store *serviceStore) *gin.Engine {
+func newRouter(store *serviceStore, builder *servicemap.ServiceMapBuilder, inspectionEngine *inspections.InspectionEngine, sloTracker *slo.SLOTracker) *gin.Engine {
 	r := gin.Default()
 
-	// connection store used to build service map from agent events
-	cstore := &connStore{}
-
 	r.GET("/api/v1/servicemap", func(c *gin.Context) {
-		// build a service map from observed connections
-		sm := servicemap.BuildServiceMap(cstore.list())
+		// Get current graph snapshot (Update with nil events)
+		sm := builder.Update(nil)
 
 		// retain backward compatible services list (cluster-agent or static)
 		svc := store.list()
@@ -174,6 +189,32 @@ func newRouter(store *serviceStore) *gin.Engine {
 
 	r.GET("/api/v1/applications", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"applications": []string{"app-1", "app-2"}})
+	})
+
+	r.GET("/api/v1/applications/:id/inspections", func(c *gin.Context) {
+		id := c.Param("id")
+		results := inspectionEngine.GetResults(id)
+		c.JSON(http.StatusOK, gin.H{"inspections": results})
+	})
+
+	r.GET("/api/v1/applications/:id/inspections/history", func(c *gin.Context) {
+		id := c.Param("id")
+		results := inspectionEngine.GetHistory(id)
+		c.JSON(http.StatusOK, gin.H{"history": results})
+	})
+
+	r.GET("/api/v1/inspections/rules", func(c *gin.Context) {
+		rules := inspectionEngine.GetRules()
+		c.JSON(http.StatusOK, gin.H{"rules": rules})
+	})
+
+	r.GET("/api/v1/slos", func(c *gin.Context) {
+		status, err := sloTracker.CheckAll(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"slos": status})
 	})
 
 	// Agent heartbeat endpoint used by node-agent
@@ -201,22 +242,22 @@ func newRouter(store *serviceStore) *gin.Engine {
 
 		// Top-level envelope support
 		var env struct {
-			Connections []servicemap.Connection `json:"connections"`
-			Map         string                  `json:"map"`
-			Data        string                  `json:"data"`
-			DataBase64  string                  `json:"data_base64"`
+			Connections []servicemap.TelemetryEvent `json:"connections"`
+			Map         string                      `json:"map"`
+			Data        string                      `json:"data"`
+			DataBase64  string                      `json:"data_base64"`
 		}
 		if err := json.Unmarshal(raw, &env); err == nil {
 			if len(env.Connections) > 0 {
-				cstore.addAll(env.Connections)
+				builder.Update(env.Connections)
 				c.JSON(http.StatusOK, gin.H{"received": true, "added": len(env.Connections)})
 				return
 			}
 			// prefer base64 field if present (common from perf-consumer)
 			if env.Map != "" && env.DataBase64 != "" {
-				if conns, err := decodePerfBase64(env.DataBase64); err == nil && len(conns) > 0 {
-					cstore.addAll(conns)
-					c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(conns)})
+				if events, err := decodePerfBase64(env.DataBase64); err == nil && len(events) > 0 {
+					builder.Update(events)
+					c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(events)})
 					return
 				}
 				c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map})
@@ -226,16 +267,16 @@ func newRouter(store *serviceStore) *gin.Engine {
 				// Attempt best-effort decoding of perf/map payloads (hex or raw)
 				// try hex first
 				if strings.HasPrefix(env.Data, "0x") {
-					if conns, err := decodePerfData(env.Data); err == nil && len(conns) > 0 {
-						cstore.addAll(conns)
-						c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(conns)})
+					if events, err := decodePerfData(env.Data); err == nil && len(events) > 0 {
+						builder.Update(events)
+						c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(events)})
 						return
 					}
 				} else {
 					// raw ASCII or JSON bytes
-					if conns, err := decodePerfRaw([]byte(env.Data)); err == nil && len(conns) > 0 {
-						cstore.addAll(conns)
-						c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(conns)})
+					if events, err := decodePerfRawToEvents([]byte(env.Data)); err == nil && len(events) > 0 {
+						builder.Update(events)
+						c.JSON(http.StatusOK, gin.H{"received": true, "map": env.Map, "added": len(events)})
 						return
 					}
 				}
@@ -246,17 +287,17 @@ func newRouter(store *serviceStore) *gin.Engine {
 		}
 
 		// Backwards compatible: array of connections
-		var conns []servicemap.Connection
-		if err := json.Unmarshal(raw, &conns); err == nil {
-			cstore.addAll(conns)
-			c.JSON(http.StatusOK, gin.H{"received": true, "added": len(conns)})
+		var events []servicemap.TelemetryEvent
+		if err := json.Unmarshal(raw, &events); err == nil {
+			builder.Update(events)
+			c.JSON(http.StatusOK, gin.H{"received": true, "added": len(events)})
 			return
 		}
 
 		// Single connection
-		var conn servicemap.Connection
-		if err := json.Unmarshal(raw, &conn); err == nil {
-			cstore.add(conn)
+		var event servicemap.TelemetryEvent
+		if err := json.Unmarshal(raw, &event); err == nil {
+			builder.Update([]servicemap.TelemetryEvent{event})
 			c.JSON(http.StatusOK, gin.H{"received": true, "added": 1})
 			return
 		}
@@ -267,8 +308,8 @@ func newRouter(store *serviceStore) *gin.Engine {
 	return r
 }
 
-// fetchOnce performs a single cluster-agent fetch and updates metrics and store.
-func fetchOnce(client *http.Client, clusterAgent string, store *serviceStore, success, errors, total prometheus.Counter) error {
+// fetchClusterData performs a single cluster-agent fetch and updates metrics, services, and pod metadata.
+func fetchClusterData(client *http.Client, clusterAgent string, store *serviceStore, metaCache *MetadataCache, success, errors, total prometheus.Counter) error {
 	if clusterAgent == "" {
 		clusterAgent = "http://cluster-agent:9100"
 	}
@@ -276,24 +317,44 @@ func fetchOnce(client *http.Client, clusterAgent string, store *serviceStore, su
 	resp, err := client.Get(clusterAgent + "/api/v1/cluster/services")
 	if err != nil {
 		errors.Inc()
-		log.Printf("cluster fetch error: %v", err)
+		log.Printf("cluster services fetch error: %v", err)
+		return err
+	}
+
+	var payload map[string][]string
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		resp.Body.Close()
+		errors.Inc()
+		log.Printf("cluster services decode error: %v", err)
+		return err
+	}
+	resp.Body.Close()
+
+	if s, ok := payload["services"]; ok {
+		store.set(s)
+	}
+
+	// Fetch Pods
+	resp, err = client.Get(clusterAgent + "/api/v1/cluster/pods")
+	if err != nil {
+		errors.Inc()
+		log.Printf("cluster pods fetch error: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
-	var payload map[string][]string
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		errors.Inc()
-		log.Printf("cluster fetch decode error: %v", err)
-		return err
+
+	var podPayload struct {
+		Pods []PodInfo `json:"pods"`
 	}
-	if s, ok := payload["services"]; ok {
-		store.set(s)
+	if err := json.NewDecoder(resp.Body).Decode(&podPayload); err == nil {
+		metaCache.UpdatePods(podPayload.Pods)
 		success.Inc()
 	}
+
 	return nil
 }
 
-func startClusterFetcher(store *serviceStore, stopCh <-chan struct{}, success, errors, total prometheus.Counter) {
+func startClusterFetcher(store *serviceStore, metaCache *MetadataCache, stopCh <-chan struct{}, success, errors, total prometheus.Counter) {
 	clusterAgent := os.Getenv("CLUSTER_AGENT_URL")
 	if clusterAgent == "" {
 		clusterAgent = "http://cluster-agent:9100"
@@ -307,7 +368,7 @@ func startClusterFetcher(store *serviceStore, stopCh <-chan struct{}, success, e
 		case <-stopCh:
 			return
 		default:
-			if err := fetchOnce(client, clusterAgent, store, success, errors, total); err != nil {
+			if err := fetchClusterData(client, clusterAgent, store, metaCache, success, errors, total); err != nil {
 				// exponential backoff with jitter
 				j := time.Duration(rand.Int63n(int64(delay)))
 				wait := delay + j/2
@@ -333,6 +394,37 @@ func main() {
 
 	// Prometheus metrics for server-side ingestion
 	reg := prometheus.NewRegistry()
+
+	// Initialize ServiceMapBuilder with metadata cache
+	metaCache := NewMetadataCache()
+	builder := servicemap.NewServiceMapBuilder(metaCache)
+	inspectionEngine := inspections.NewInspectionEngine(reg)
+
+	// Initialize SLO Tracker
+	promURL := os.Getenv("PROMETHEUS_URL")
+	if promURL == "" {
+		promURL = "http://prometheus:9090"
+	}
+	client, err := api.NewClient(api.Config{Address: promURL})
+	if err != nil {
+		log.Printf("Warning: failed to create prometheus client: %v", err)
+	}
+	v1api := v1.NewAPI(client)
+	sloTracker := slo.NewSLOTracker(v1api)
+
+	// Add default SLOs
+	sloTracker.AddSLO(&slo.SLO{
+		Name:        "API Availability",
+		Application: "app-1",
+		Type:        slo.SLOTypeAvailability,
+		Target:      99.9,
+		Window:      "30d",
+		Indicator: slo.SLOIndicator{
+			Success: "http_requests_total{status!~'5..'}",
+			Total:   "http_requests_total",
+		},
+	})
+
 	fetchTotal := prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "server_cluster_fetch_total",
 		Help: "Total attempts to fetch services from cluster-agent",
@@ -347,7 +439,7 @@ func main() {
 	})
 	reg.MustRegister(fetchTotal, fetchSuccess, fetchErrors)
 
-	r := newRouter(store)
+	r := newRouter(store, builder, inspectionEngine, sloTracker)
 	// add server metrics endpoint bound to registry
 	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
 
@@ -357,7 +449,24 @@ func main() {
 	}
 
 	stopCh := make(chan struct{})
-	go startClusterFetcher(store, stopCh, fetchSuccess, fetchErrors, fetchTotal)
+
+	// Start inspection loop
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				// Get latest snapshot and run inspections
+				sm := builder.Update(nil)
+				inspectionEngine.Run(sm)
+			}
+		}
+	}()
+
+	go startClusterFetcher(store, metaCache, stopCh, fetchSuccess, fetchErrors, fetchTotal)
 
 	// shutdown handling omitted for brevity
 	r.Run(":" + port)

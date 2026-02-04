@@ -1,25 +1,19 @@
-# Simple Makefile for compiling eBPF sources
+CLANG ?= clang
+BPFTOOL ?= bpftool
 
-SRCS := $(wildcard *.c)
-OBJS := $(SRCS:.c=.o)
+ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
 
-all: $(OBJS)
+TARGETS := network_tracer.o
 
-%.o: %.c
-	clang -O2 -target bpf -c $< -o $@
+.PHONY: all clean
 
-syntax-check:
-	clang -fsyntax-only $(SRCS)
-
-verify: all
-	@which bpftool >/dev/null 2>&1 || (echo "bpftool not found; skipping verify" && exit 0)
-	@for o in $(OBJS); do \
-		echo "attempting to load $$o"; \
-		sudo bpftool prog load $$o /sys/fs/bpf/$${o%.o} || true; \
-	done
-	sudo bpftool prog show || true
+all: $(TARGETS)
 
 clean:
-	rm -f $(OBJS)
+	rm -f $(TARGETS) vmlinux.h
 
-.PHONY: all syntax-check verify clean
+vmlinux.h:
+	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
+
+network_tracer.o: network_tracer.c vmlinux.h
+	$(CLANG) -O2 -g -target bpf -D__TARGET_ARCH_$(ARCH) -I. -c $< -o $@
