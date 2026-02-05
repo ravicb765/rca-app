@@ -6,10 +6,11 @@ The Backend Server is the central brain of the RCA-App. It aggregates data from 
 
 - **Service Map Builder**: Constructs a directed graph of services from network events.
 - **Cycle Detection**: Identifies circular dependencies in the service graph.
-- **Inspection Engine**: internal framework to run periodic health rules (e.g., "High Error Rate").
+- **Inspection Engine**: Internal framework to run 60+ health rules.
 - **Log Clustering**: Implements a Drain-like algorithm to group log patterns.
 - **Metrics Query Interface**: Unified API to query Prometheus data.
-- **Multi-Tenancy**: Supports tenant isolation via `X-Tenant-ID`.
+- **Enterprise Security**: RBAC (Admin/Operator/Viewer) and OIDC/JWT support.
+- **Self-Monitoring**: Operational metrics exposed at `/metrics`.
 
 ## Development
 

@@ -38,6 +38,17 @@ sudo go run main.go
 | `RCA_APP_ENDPOINT` | URL of the central Backend Server | `http://localhost:8080` |
 | `LOG_LEVEL` | Logging verbosity | `info` |
 
+## Packaging & Distribution
+
+The agent supports native Linux packaging for easy distribution to VMs:
+
+```bash
+make package-deb # Generates .deb for Debian/Ubuntu
+make package-rpm # Generates .rpm for RHEL/CentOS
+```
+
+Packages include a `systemd` service unit for automated lifecycle management.
+
 ## Architecture
 
 The agent uses `cilium/ebpf` to load C programs into the kernel. It reads events from `BPF_MAP_TYPE_PERF_EVENT_ARRAY` and forwards them to the backend server via a buffered channel.

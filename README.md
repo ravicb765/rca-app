@@ -76,12 +76,13 @@ make build
 
 ## 📂 Directory Structure
 
-- `/node-agent`: eBPF C code and Go userspace agent.
+- `/node-agent`: eBPF C code and Go userspace agent (supports RPM/DEB).
 - `/server`: Core API, Service Map Builder, Inspection Engine.
-- `/ml-service`: Python ML models and RAG implementation.
+- `/ml-service`: Python ML models and RCA reasoning engine.
 - `/backstage-portal`: Backstage app with custom plugins.
 - `/deploy`: Kubernetes manifests and Helm charts.
-- `/docs`: Architecture and Operations documentation.
+- `/docs`: Architecture, Operations, and Technical Guides.
+- `RCA-APP-QUICK-REFERENCE.md`: Quick reference card for operations.
 
 ## 🤝 Contributing
 

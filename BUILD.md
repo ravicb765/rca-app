@@ -12,58 +12,43 @@ This document provides detailed steps to compile and build the RCA-App modules.
 
 ## 1. Node Agent (Go + eBPF)
 
-The Node Agent consists of a Go userspace program and C-based eBPF kernel probes.
+### Native Packaging (RPM/DEB)
 
-### Local Build
+The Node Agent supports native packaging using `nfpm`:
 
-1.  **Compile eBPF Object**:
-    ```bash
-    cd node-agent/ebpf
-    make
-    ```
-    This generates `network_tracer.o`.
-
-2.  **Build Go Binary**:
+1.  **Build amd64 Binary**:
     ```bash
     cd node-agent
-    go mod tidy
-    go build -o node-agent main.go
+    make build-amd64
     ```
 
-3.  **Run**:
+2.  **Generate Packages**:
     ```bash
-    sudo ./node-agent
+    make package-deb
+    make package-rpm
     ```
-    *Note: Root privileges are required to load eBPF programs.*
+    Alternatively, use the orchestration script:
+    ```bash
+    ./scripts/package.sh
+    ```
 
-### Docker Build
-
-The Dockerfile handles eBPF compilation automatically.
-
-```bash
-cd node-agent
-docker build -t rca-app-node-agent:latest .
-```
+---
 
 ## 2. Server (Go)
 
-### Local Build
+### Local Build (Requires CGO)
+The server uses `go-sqlite3`, which requires CGO and a working C compiler (`gcc`).
 
 ```bash
 cd server
-go mod tidy
+export CGO_ENABLED=1
 go build -o server main.go
-./server
 ```
 
-### Docker Build
-
-```bash
-cd server
-docker build -t rca-app-server:latest .
-```
+---
 
 ## 3. ML Service (Python)
+... (existing content) ...
 
 ### Local Build
 

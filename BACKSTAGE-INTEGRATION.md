@@ -14,6 +14,8 @@ This guide explains how to integrate **Backstage** as the web UI for RCA-App, le
 
 ### Extensible Plugin Ecosystem
 - **100+ community plugins** available
+### Unified Developer Portal
+- **Spotify's Backstage**: Built on React for a modern, extensible developer experience.
 - **Service catalog** for managing all applications
 - **Software templates** for standardization
 - **TechDocs** for documentation

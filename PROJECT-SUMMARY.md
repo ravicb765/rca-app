@@ -59,33 +59,20 @@
 
 ```
 rca-app/
-├── rca-app-guide.md           # Comprehensive 300+ page guide
+├── docs/
+│   ├── RCA-APP-GUIDE.md        # Comprehensive technical guide
+│   ├── OPERATIONS-GUIDE.md     # SRE/DevOps operations guide
+│   └── api/                    # OpenAPI specs and SDK configs
 ├── RCA-APP-QUICK-REFERENCE.md # Quick reference card
 ├── BACKSTAGE-INTEGRATION.md   # Backstage setup guide
 ├── README.md                  # Project documentation
-├── docker-compose.yml         # Local development setup
 ├── node-agent/                # eBPF-based data collector
-│   ├── main.go
-│   ├── Dockerfile
-│   └── go.mod
-├── server/                    # Main backend application
-│   ├── main.go
-│   ├── Dockerfile
-│   └── go.mod
-├── ml-service/                # AI/ML service
-│   ├── main.py
-│   ├── Dockerfile
-│   └── requirements.txt
-└── backstage-portal/          # Backstage developer portal (Web UI)
-    ├── packages/
-    │   ├── app/              # Frontend
-    │   └── backend/          # Backend API
-    └── plugins/              # Custom RCA-App plugins
-        ├── service-map/
-        ├── ai-analysis/
-        ├── inspections/
-        ├── profiling/
-        └── cost-monitoring/
+│   ├── nfpm.yaml              # Native packaging config
+│   ├── scripts/               # Install and package scripts
+│   └── main.go
+├── server/                    # Main backend application (Go)
+├── ml-service/                # AI/ML service (Python)
+└── backstage-portal/          # Backstage developer portal
 ```
 
 ## Features Status
@@ -100,11 +87,13 @@ rca-app/
 - ✅ **AI-powered root cause analysis**
 
 ### Advanced Features
-- ✅ **Predefined inspections** (health checks)
-- ✅ **SLO tracking**
-- ✅ **Cost monitoring**
-- ✅ **Deployment tracking**
-- ✅ **Alerting** (Email, Slack, PagerDuty, Jira, OpsGenie, Microsoft Teams, Webhook)
+- ✅ **Predefined inspections** (60+ health checks)
+- ✅ **SLO tracking** (Availability, Latency, Error Rate)
+- ✅ **Cost monitoring** (AWS, GCP, Azure)
+- ✅ **Deployment tracking** (K8s events)
+- ✅ **Alerting** (Slack, PagerDuty, Teams, Jira, etc.)
+- ✅ **Enterprise Security** (RBAC, OIDC, Masking)
+- ✅ **Native Packaging** (RPM, DEB, amd64)
 
 ## Key Components
 
