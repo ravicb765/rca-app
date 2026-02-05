@@ -1,0 +1,84 @@
+- [x] Update `PROJECT-SUMMARY.md` with the new feature list and status <!-- id: 0 -->
+- [x] Verify `README.md` alignment <!-- id: 1 -->
+- [x] Plan for "Advanced Features" implementation <!-- id: 2 -->
+    - [x] Research existing `rules.go` and `server/` code <!-- id: 3 -->
+    - [x] Identify missing inspection types <!-- id: 4 -->
+    - [x] Create implementation plan for Predefined Inspections <!-- id: 5 -->
+- [x] Implement Predefined Inspections Fixes <!-- id: 6 -->
+    - [x] Update `servicemap.go` structs (`Connection`, `TelemetryEvent`) <!-- id: 7 -->
+    - [x] Update `servicemap.go` update logic <!-- id: 8 -->
+    - [x] Verify `engine.go` compilation <!-- id: 9 -->
+- [x] Implement SLO Tracking <!-- id: 10 -->
+    - [x] Analyze existing `server/slo/` code <!-- id: 11 -->
+    - [x] Identify missing functionality <!-- id: 12 -->
+    - [x] Implement SLO configuration and persistence <!-- id: 13 -->
+    - [x] Add SLO violation detection <!-- id: 14 -->
+    - [x] Create API endpoints for SLO management <!-- id: 15 -->
+- [x] Git Commit and Build Configuration <!-- id: 16 -->
+    - [x] Review Makefile for updates <!-- id: 17 -->
+    - [x] Review Dockerfile for updates <!-- id: 18 -->
+    - [x] Stage changes for commit <!-- id: 19 -->
+    - [x] Create commit message <!-- id: 20 -->
+- [x] Implement Cost Monitoring <!-- id: 21 -->
+    - [x] Analyze existing stub in server/pkg/integrations/ <!-- id: 22 -->
+    - [x] Design cost tracking data model <!-- id: 23 -->
+    - [x] Implement cost collection and aggregation <!-- id: 24 -->
+    - [x] Verification & Test Suite Updates <!-- id: 78 -->
+    - [x] Update `server/main_test.go` with auth and new endpoints <!-- id: 79 -->
+    - [x] Update `tests/integration` with auth <!-- id: 80 -->
+    - [x] Verify all tests pass <!-- id: 81 -->
+    - [x] Create API endpoints for cost data <!-- id: 25 -->
+- [x] Deployment Preparation <!-- id: 74 -->
+    - [x] Update `docker-compose.yml` with security and persistence <!-- id: 75 -->
+    - [x] Verify local deployment with authentication <!-- id: 76 -->
+    - [x] Document production deployment steps <!-- id: 77 -->
+    - [x] Add API endpoints for deployment data <!-- id: 30 -->
+- [x] Implement Alerting <!-- id: 31 -->
+    - [x] Review existing alert providers in engine.go <!-- id: 32 -->
+    - [x] Create alert configuration management <!-- id: 33 -->
+    - [x] Implement alert triggering logic <!-- id: 34 -->
+    - [x] Add API endpoints for alert management <!-- id: 35 -->
+- [x] Security Audit and Fixes <!-- id: 36 -->
+    - [x] Review authentication and authorization <!-- id: 37 -->
+    - [x] Check for injection vulnerabilities <!-- id: 38 -->
+    - [x] Validate input sanitization <!-- id: 39 -->
+    - [x] Review secrets management <!-- id: 40 -->
+    - [x] Check for insecure dependencies <!-- id: 41 -->
+    - [x] Fix identified issues <!-- id: 42 -->
+- [x] Final Git Commit <!-- id: 43 -->
+- [x] Implement Database Persistence <!-- id: 44 -->
+    - [x] Create database package with SQLite <!-- id: 45 -->
+    - [x] Create repository pattern for data access <!-- id: 46 -->
+    - [x] Add SQLite dependency to go.mod <!-- id: 47 -->
+    - [x] Integrate database with existing components <!-- id: 48 -->
+- [x] Create Architecture Documentation <!-- id: 49 -->
+    - [x] Create ARCHITECTURE.md <!-- id: 50 -->
+- [x] Backstage Integration and Plugins <!-- id: 51 -->
+    - [x] Review custom RCA-App plugins implementation <!-- id: 52 -->
+    - [x] Verify Service Map plugin <!-- id: 53 -->
+    - [x] Verify AI Analysis plugin <!-- id: 54 -->
+    - [x] Verify Inspections plugin <!-- id: 55 -->
+    - [x] Verify Profiling plugin <!-- id: 56 -->
+    - [x] Verify Cost Monitoring plugin <!-- id: 57 -->
+    - [x] Check Backstage backend integration <!-- id: 58 -->
+    - [x] Fix any missing or broken functionality <!-- id: 59 -->
+- [x] Update Build and Compilation Scripts <!-- id: 60 -->
+    - [x] Update `server/Makefile` with CGO and new paths <!-- id: 61 -->
+    - [x] Update `server/Dockerfile` with build tools for SQLite <!-- id: 62 -->
+    - [x] Verify root `Makefile` build steps <!-- id: 63 -->
+    - [x] Run full build and verify compilation <!-- id: 64 -->
+- [x] Phase 3: ML Service Integration & AI Analysis <!-- id: 65 -->
+    - [x] Create Go client for ML service in `server/ml` <!-- id: 66 -->
+    - [x] Implement `/api/v1/analyze` in `main.go` <!-- id: 67 -->
+    - [x] Update `ml-service/rca_engine.py` with detailed reasoning <!-- id: 68 -->
+    - [x] Verify end-to-end AI analysis from Backstage <!-- id: 69 -->
+- [x] Phase 4: Final Backstage Polish & Certification <!-- id: 70 -->
+    - [x] Audit requirements for Cost and Profiling plugins <!-- id: 71 -->
+    - [x] Implement missing API endpoints in `main.go` <!-- id: 72 -->
+    - [x] Final end-to-end verification of all plugins <!-- id: 73 -->
+- [x] Node Agent Advanced Packaging (RPM/DEB/amd64) <!-- id: 82 -->
+    - [x] Add `build-amd64` target to `Makefile` <!-- id: 83 -->
+    - [x] Create `nfpm.yaml` configuration <!-- id: 84 -->
+    - [x] Implement `package-deb` and `package-rpm` targets <!-- id: 85 -->
+    - [x] Create `scripts/package.sh` orchestration script <!-- id: 86 -->
+    - [x] Verify multi-format builds <!-- id: 87 -->
