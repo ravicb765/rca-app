@@ -108,10 +108,19 @@ type Connection struct {
 	SwapUsage         float64   `json:"swap_usage,omitempty"`
 	RestartCount      float64   `json:"restart_count,omitempty"`
 	CPUThrottling     float64   `json:"cpu_throttling,omitempty"`
-	GoroutineCount    float64   `json:"goroutine_count,omitempty"`
-	OpenFDs           float64   `json:"open_fds,omitempty"`
-	ThreadCount       float64   `json:"thread_count,omitempty"`
-	LastSeen          time.Time `json:"last_seen,omitempty"`
+	GoroutineCount          float64   `json:"goroutine_count,omitempty"`
+	OpenFDs                 float64   `json:"open_fds,omitempty"`
+	ThreadCount             float64   `json:"thread_count,omitempty"`
+	MemcachedEvictions      float64   `json:"memcached_evictions,omitempty"`
+	KafkaConsumerLag        float64   `json:"kafka_consumer_lag,omitempty"`
+	RedisFragmentationRatio float64   `json:"redis_fragmentation_ratio,omitempty"`
+	OomKills                float64   `json:"oom_kills,omitempty"`
+	TcpRetransmits          float64   `json:"tcp_retransmits,omitempty"`
+	KernelPacketDrops       float64   `json:"kernel_packet_drops,omitempty"`
+	PageFaults              float64   `json:"page_faults,omitempty"`
+	ContextSwitches         float64   `json:"context_switches,omitempty"`
+	QueueLength             float64   `json:"queue_length,omitempty"`
+	LastSeen                time.Time `json:"last_seen,omitempty"`
 }
 
 // TelemetryEvent represents a raw network event received from an agent
@@ -134,10 +143,19 @@ type TelemetryEvent struct {
 	IOWait            float64 `json:"io_wait"`
 	SwapUsage         float64 `json:"swap_usage"`
 	RestartCount      float64 `json:"restart_count"`
-	CPUThrottling     float64 `json:"cpu_throttling"`
-	GoroutineCount    float64 `json:"goroutine_count"`
-	OpenFDs           float64 `json:"open_fds"`
-	ThreadCount       float64 `json:"thread_count"`
+	CPUThrottling           float64 `json:"cpu_throttling"`
+	GoroutineCount          float64 `json:"goroutine_count"`
+	OpenFDs                 float64 `json:"open_fds"`
+	ThreadCount             float64 `json:"thread_count"`
+	MemcachedEvictions      float64 `json:"memcached_evictions"`
+	KafkaConsumerLag        float64 `json:"kafka_consumer_lag"`
+	RedisFragmentationRatio float64 `json:"redis_fragmentation_ratio"`
+	OomKills                float64 `json:"oom_kills"`
+	TcpRetransmits          float64 `json:"tcp_retransmits"`
+	KernelPacketDrops       float64 `json:"kernel_packet_drops"`
+	PageFaults              float64 `json:"page_faults"`
+	ContextSwitches         float64 `json:"context_switches"`
+	QueueLength             float64 `json:"queue_length"`
 }
 
 // NewServiceMap creates an empty ServiceMap
@@ -321,6 +339,15 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 		existing.GoroutineCount = existing.GoroutineCount*(1-alpha) + event.GoroutineCount*alpha
 		existing.OpenFDs = existing.OpenFDs*(1-alpha) + event.OpenFDs*alpha
 		existing.ThreadCount = existing.ThreadCount*(1-alpha) + event.ThreadCount*alpha
+		existing.MemcachedEvictions = existing.MemcachedEvictions*(1-alpha) + event.MemcachedEvictions*alpha
+		existing.KafkaConsumerLag = existing.KafkaConsumerLag*(1-alpha) + event.KafkaConsumerLag*alpha
+		existing.RedisFragmentationRatio = existing.RedisFragmentationRatio*(1-alpha) + event.RedisFragmentationRatio*alpha
+		existing.OomKills = existing.OomKills*(1-alpha) + event.OomKills*alpha
+		existing.TcpRetransmits = existing.TcpRetransmits*(1-alpha) + event.TcpRetransmits*alpha
+		existing.KernelPacketDrops = existing.KernelPacketDrops*(1-alpha) + event.KernelPacketDrops*alpha
+		existing.PageFaults = existing.PageFaults*(1-alpha) + event.PageFaults*alpha
+		existing.ContextSwitches = existing.ContextSwitches*(1-alpha) + event.ContextSwitches*alpha
+		existing.QueueLength = existing.QueueLength*(1-alpha) + event.QueueLength*alpha
 		if existing.Protocol == "" && event.Protocol != "" {
 			existing.Protocol = event.Protocol
 		}
@@ -344,11 +371,20 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 			IOWait:            event.IOWait,
 			SwapUsage:         event.SwapUsage,
 			RestartCount:      event.RestartCount,
-			CPUThrottling:     event.CPUThrottling,
-			GoroutineCount:    event.GoroutineCount,
-			OpenFDs:           event.OpenFDs,
-			ThreadCount:       event.ThreadCount,
-			LastSeen:          time.Now(),
+			CPUThrottling:           event.CPUThrottling,
+			GoroutineCount:          event.GoroutineCount,
+			OpenFDs:                 event.OpenFDs,
+			ThreadCount:             event.ThreadCount,
+			MemcachedEvictions:      event.MemcachedEvictions,
+			KafkaConsumerLag:        event.KafkaConsumerLag,
+			RedisFragmentationRatio: event.RedisFragmentationRatio,
+			OomKills:                event.OomKills,
+			TcpRetransmits:          event.TcpRetransmits,
+			KernelPacketDrops:       event.KernelPacketDrops,
+			PageFaults:              event.PageFaults,
+			ContextSwitches:         event.ContextSwitches,
+			QueueLength:             event.QueueLength,
+			LastSeen:                time.Now(),
 		}
 	}
 

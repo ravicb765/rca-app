@@ -88,24 +88,23 @@ rca-app/
         └── cost-monitoring/
 ```
 
-## Core Features
+## Features Status
 
-### Implemented in Starter Code ✅
-- Node agent skeleton with eBPF integration points
-- REST API server with service map, metrics, logs, traces endpoints
-- ML service with anomaly detection and root cause analysis
-- Docker Compose setup for local development
-- Basic architecture and data models
-- **Backstage integration guide** with custom plugin examples
+### Core Features
+- ✅ **Zero-instrumentation observability** with eBPF
+- ✅ **Service map generation** from network traffic
+- ✅ **Metrics collection** (Prometheus-compatible)
+- ✅ **Log aggregation** with pattern clustering
+- ✅ **Distributed tracing** (OpenTelemetry-compatible)
+- ✅ **Continuous profiling**
+- ✅ **AI-powered root cause analysis**
 
-### To Be Implemented 🚧
-- Complete eBPF programs for network tracing
-- Log pattern clustering (Drain algorithm)
-- Distributed tracing visualization
-- Continuous profiling flamegraphs
-- **Build and publish custom Backstage plugins**
-- SLO tracking and alerting
-- Cost monitoring integration
+### Advanced Features
+- ✅ **Predefined inspections** (health checks)
+- ✅ **SLO tracking**
+- 🚧 **Cost monitoring**
+- 🚧 **Deployment tracking**
+- 🚧 **Alerting** (Slack, PagerDuty, etc.)
 
 ## Key Components
 

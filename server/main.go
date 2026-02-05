@@ -280,6 +280,78 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		c.JSON(http.StatusOK, gin.H{"slos": status})
 	})
 
+	// Create new SLO
+	r.POST("/api/v1/slos", func(c *gin.Context) {
+		var slo slo.SLO
+		if err := c.BindJSON(&slo); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := sloTracker.AddSLO(&slo); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"message": "SLO created", "slo": slo})
+	})
+
+	// Get specific SLO configuration
+	r.GET("/api/v1/slos/:name", func(c *gin.Context) {
+		name := c.Param("name")
+		slo, err := sloTracker.GetSLO(name)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"slo": slo})
+	})
+
+	// Update SLO
+	r.PUT("/api/v1/slos/:name", func(c *gin.Context) {
+		name := c.Param("name")
+		var updated slo.SLO
+		if err := c.BindJSON(&updated); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := sloTracker.UpdateSLO(name, &updated); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "SLO updated", "slo": updated})
+	})
+
+	// Delete SLO
+	r.DELETE("/api/v1/slos/:name", func(c *gin.Context) {
+		name := c.Param("name")
+		if err := sloTracker.RemoveSLO(name); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "SLO deleted"})
+	})
+
+	// Get SLO status (current compliance)
+	r.GET("/api/v1/slos/:name/status", func(c *gin.Context) {
+		name := c.Param("name")
+		slo, err := sloTracker.GetSLO(name)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		status, err := sloTracker.CheckSLO(c.Request.Context(), slo)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": status})
+	})
+
+	// List all SLO configurations
+	r.GET("/api/v1/slos/list", func(c *gin.Context) {
+		slos := sloTracker.ListSLOs()
+		c.JSON(http.StatusOK, gin.H{"slos": slos})
+	})
+
 	r.GET("/api/v1/agents", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"agents": agentStore.ListActive()})
 	})
