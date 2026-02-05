@@ -5,12 +5,14 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"context"
 	"log"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +24,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/ravicb765/rca-app/server/inspections"
+	"github.com/ravicb765/rca-app/server/alerts"
+	"github.com/ravicb765/rca-app/server/deployment"
+	"github.com/ravicb765/rca-app/server/cost"
 	"github.com/ravicb765/rca-app/server/pkg/cache"
 	"github.com/ravicb765/rca-app/server/pkg/integrations"
 	"github.com/ravicb765/rca-app/server/pkg/metrics"
@@ -350,6 +355,176 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 	r.GET("/api/v1/slos/list", func(c *gin.Context) {
 		slos := sloTracker.ListSLOs()
 		c.JSON(http.StatusOK, gin.H{"slos": slos})
+	})
+
+	// Initialize Alert Manager
+	alertManager := alerts.NewAlertManager()
+
+	// Configure alert provider
+	r.POST("/api/v1/alerts/config", func(c *gin.Context) {
+		var config alerts.AlertConfig
+		if err := c.BindJSON(&config); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := alertManager.ConfigureProvider(config); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"message": "Alert provider configured"})
+	})
+
+	// List alert configurations
+	r.GET("/api/v1/alerts/config", func(c *gin.Context) {
+		configs := alertManager.GetConfigs()
+		c.JSON(http.StatusOK, gin.H{"configs": configs})
+	})
+
+	// Update alert provider configuration
+	r.PUT("/api/v1/alerts/config/:provider", func(c *gin.Context) {
+		provider := c.Param("provider")
+		var config alerts.AlertConfig
+		if err := c.BindJSON(&config); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		config.Provider = provider
+		if err := alertManager.ConfigureProvider(config); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Alert provider updated"})
+	})
+
+	// Delete alert provider
+	r.DELETE("/api/v1/alerts/config/:provider", func(c *gin.Context) {
+		provider := c.Param("provider")
+		if err := alertManager.RemoveProvider(provider); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Alert provider removed"})
+	})
+
+	// Test alert delivery
+	r.POST("/api/v1/alerts/test", func(c *gin.Context) {
+		var testAlert alerts.Alert
+		if err := c.BindJSON(&testAlert); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if testAlert.Timestamp.IsZero() {
+			testAlert.Timestamp = time.Now()
+		}
+		if err := alertManager.SendAlert(testAlert); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Test alert sent successfully"})
+	})
+
+	// Initialize Deployment Tracker
+	deploymentTracker, err := deployment.NewDeploymentTracker()
+	if err != nil {
+		log.Printf("Warning: failed to create deployment tracker: %v", err)
+	} else {
+		go deploymentTracker.Start(context.Background())
+	}
+
+	// Get all recent deployments
+	r.GET("/api/v1/deployments", func(c *gin.Context) {
+		if deploymentTracker == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "deployment tracker not available"})
+			return
+		}
+		limit := 50
+		if limitStr := c.Query("limit"); limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil {
+				limit = l
+			}
+		}
+		deployments := deploymentTracker.GetAllDeployments(limit)
+		c.JSON(http.StatusOK, gin.H{"deployments": deployments})
+	})
+
+	// Get deployments for a specific service
+	r.GET("/api/v1/deployments/:namespace/:name", func(c *gin.Context) {
+		if deploymentTracker == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "deployment tracker not available"})
+			return
+		}
+		namespace := c.Param("namespace")
+		name := c.Param("name")
+		limit := 10
+		if limitStr := c.Query("limit"); limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil {
+				limit = l
+			}
+		}
+		history := deploymentTracker.GetDeploymentHistory(namespace, name, limit)
+		c.JSON(http.StatusOK, gin.H{"history": history})
+	})
+
+	// Get latest deployment for a service
+	r.GET("/api/v1/deployments/:namespace/:name/latest", func(c *gin.Context) {
+		if deploymentTracker == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "deployment tracker not available"})
+			return
+		}
+		namespace := c.Param("namespace")
+		name := c.Param("name")
+		latest := deploymentTracker.GetLatestDeployment(namespace, name)
+		if latest == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "no deployment found"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"deployment": latest})
+	})
+
+	// Initialize Cost Tracker
+	costTracker := cost.NewCostTracker()
+
+	// Record cost data
+	r.POST("/api/v1/costs", func(c *gin.Context) {
+		var costData cost.CostData
+		if err := c.BindJSON(&costData); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		costTracker.TrackCost(costData)
+		c.JSON(http.StatusCreated, gin.H{"message": "Cost data recorded"})
+	})
+
+	// Get all costs
+	r.GET("/api/v1/costs", func(c *gin.Context) {
+		period := c.Query("period")
+		services := costTracker.GetAllServices()
+		allCosts := make(map[string][]cost.CostData)
+		for _, service := range services {
+			allCosts[service] = costTracker.GetCostByService(service, period)
+		}
+		c.JSON(http.StatusOK, gin.H{"costs": allCosts})
+	})
+
+	// Get costs for a specific service
+	r.GET("/api/v1/costs/:service", func(c *gin.Context) {
+		service := c.Param("service")
+		period := c.Query("period")
+		costs := costTracker.GetCostByService(service, period)
+		c.JSON(http.StatusOK, gin.H{"service": service, "costs": costs})
+	})
+
+	// Get cost trend for a service
+	r.GET("/api/v1/costs/:service/trend", func(c *gin.Context) {
+		service := c.Param("service")
+		days := 30
+		if daysStr := c.Query("days"); daysStr != "" {
+			if d, err := strconv.Atoi(daysStr); err == nil {
+				days = d
+			}
+		}
+		trend := costTracker.GetCostTrend(service, days)
+		c.JSON(http.StatusOK, gin.H{"trend": trend})
 	})
 
 	r.GET("/api/v1/agents", func(c *gin.Context) {

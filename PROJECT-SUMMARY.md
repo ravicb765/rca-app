@@ -102,9 +102,9 @@ rca-app/
 ### Advanced Features
 - ✅ **Predefined inspections** (health checks)
 - ✅ **SLO tracking**
-- 🚧 **Cost monitoring**
-- 🚧 **Deployment tracking**
-- 🚧 **Alerting** (Slack, PagerDuty, etc.)
+- ✅ **Cost monitoring**
+- ✅ **Deployment tracking**
+- ✅ **Alerting** (Email, Slack, PagerDuty, Jira, OpsGenie, Microsoft Teams, Webhook)
 
 ## Key Components
 
