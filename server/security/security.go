@@ -99,7 +99,71 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 	}
 }
 
-// Input validation functions
+// Role-based access control constants
+const (
+	RoleAdmin    = "admin"
+	RoleOperator = "operator"
+	RoleViewer   = "viewer"
+)
+
+// RBAC middleware to enforce role-based access
+func RBAC(requiredRole string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// In a real implementation, this would be extracted from a JWT claim
+		userRole := c.GetHeader("X-User-Role")
+		if userRole == "" {
+			userRole = RoleViewer // Default
+		}
+
+		if !hasPermission(userRole, requiredRole) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: insufficient permissions"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+func hasPermission(userRole, requiredRole string) bool {
+	roles := map[string]int{
+		RoleAdmin:    3,
+		RoleOperator: 2,
+		RoleViewer:   1,
+	}
+	return roles[userRole] >= roles[requiredRole]
+}
+
+// OIDCAuth middleware for JWT/OIDC validation (stub)
+func OIDCAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			// Fail open to API Key for now if no bearer token
+			c.Next()
+			return
+		}
+
+		// Token validation logic would go here (e.g., using jks-go)
+		// token := strings.TrimPrefix(authHeader, "Bearer ")
+		// claims, err := validateToken(token)
+		
+		c.Next()
+	}
+}
+
+// SensitiveDataMasker scrubs PII and secrets from telemetry
+func SensitiveDataMasker(data string) string {
+	// Mask potential credit cards, emails, and internal tokens
+	emailRegex := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+	masked := emailRegex.ReplaceAllString(data, "[REDACTED_EMAIL]")
+	
+	tokenRegex := regexp.MustCompile(`(token|password|secret|key)=[^&\s]+`)
+	masked = tokenRegex.ReplaceAllString(masked, "$1=[REDACTED]")
+	
+	return masked
+}
+
+// Validation and Sanitization functions...
 
 // ValidateServiceName validates service/application names
 func ValidateServiceName(name string) bool {

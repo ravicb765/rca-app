@@ -40,6 +40,29 @@ import (
 	"github.com/ravicb765/rca-app/server/slo"
 )
 
+var (
+	ingestionRate = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "rca_ingestion_events_total",
+			Help: "Total number of telemetry events ingested",
+		},
+		[]string{"type"},
+	)
+	dbQueryDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "rca_db_query_duration_seconds",
+			Help:    "Duration of database queries",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"operation"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(ingestionRate)
+	prometheus.MustRegister(dbQueryDuration)
+}
+
 var kvRe = regexp.MustCompile(`(src|source|dst|dest|proto)=([^\s]+)`)
 
 type MetadataCache struct {

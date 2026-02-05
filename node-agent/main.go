@@ -92,6 +92,20 @@ func main() {
 		}
 	}()
 
+	// 6. Listen for events...
+	
+	// 7. Self-monitoring routine
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		for range ticker.C {
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			// In production, this would be exported to Prometheus
+			fmt.Printf("[%s] [AGENT_MONITOR] Alloc=%v MiB, TotalAlloc=%v MiB, Sys=%v MiB, NumGC=%v\n", 
+				time.Now().Format(time.RFC3339), m.Alloc/1024/1024, m.TotalAlloc/1024/1024, m.Sys/1024/1024, m.NumGC)
+		}
+	}()
+
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
 	<-stopper
