@@ -254,85 +254,14 @@ type Instance struct {
 
 **Predefined Inspections**:
 
-```yaml
-inspections:
-  - name: "High Error Rate"
-    category: "Availability"
-    threshold: "error_rate > 1%"
-    severity: "critical"
-    
-  - name: "Slow Response Time"
-    category: "Performance"
-    threshold: "p95_latency > baseline * 1.5"
-    severity: "warning"
-    
-  - name: "Memory Leak Detection"
-    category: "Resources"
-    pattern: "memory_usage continuously increasing"
-    severity: "warning"
-    
-  - name: "Database Connection Pool Exhaustion"
-    category: "Database"
-    threshold: "active_connections > pool_size * 0.9"
-    severity: "critical"
-    
-  - name: "Network Latency"
-    category: "Network"
-    threshold: "network_latency > 50ms"
-    severity: "warning"
-
-  - name: "High CPU Usage"
-    category: "Resources"
-    threshold: "cpu_usage > 80%"
-    severity: "warning"
-
-  - name: "High Disk Usage"
-    category: "Resources"
-    threshold: "disk_usage > 90%"
-    severity: "critical"
-
-  - name: "High IO Load"
-    category: "Performance"
-    threshold: "io_load > 10"
-    severity: "warning"
-
-  - name: "Network Packet Loss"
-    category: "Network"
-    threshold: "packet_loss > 1%"
-    severity: "warning"
-
-  - name: "High HTTP 5xx Rate"
-    category: "Availability"
-    threshold: "http_5xx_rate > 5%"
-    severity: "critical"
-
-  - name: "High Disk I/O Wait"
-    category: "Performance"
-    threshold: "io_wait > 10%"
-    severity: "warning"
-
-  - name: "High Memory Swap Usage"
-    category: "Resources"
-    threshold: "swap_usage > 10%"
-    severity: "warning"
-
-  - name: "High Container Restarts"
-    category: "Stability"
-    threshold: "restart_count > 3"
-    severity: "critical"
-
-  - name: "High CPU Throttling"
-    category: "Performance"
-    threshold: "cpu_throttling > 5%"
-    severity: "warning"
-
-  - name: "High Goroutine Count"
-    category: "Resources"
-    threshold: "goroutine_count > 10000"
-    severity: "warning"
-```
-
-**Implementation**:
+| Inspection | Category | Threshold |
+|------------|----------|-----------|
+| High Error Rate | Availability | error_rate > 1% |
+| Slow Response | Performance | p95_latency > baseline * 1.5 |
+| Memory Leak | Resources | memory continuously increasing |
+| DB Pool Exhaustion | Database | active_connections > 90% |
+| High CPU Usage | Resources | cpu_usage > 80% |
+| Network Latency | Network | network_latency > 50ms |
 
 ```go
 package inspections
@@ -848,6 +777,14 @@ func (st *SLOTracker) CheckSLO(slo *SLO) *SLOStatus {
 ```
 
 ### ML Models to Implement
+
+#### ML Models Summary
+
+| Feature | Algorithm/Method | Details |
+|---------|-----------------|---------|
+| **Anomaly Detection** | Isolation Forest | **Input**: Error rate, latency, CPU, memory, request rate<br>**Output**: Normal (1) or Anomaly (-1) |
+| **Incident Classification** | Random Forest | **Categories**: database_slowdown, memory_leak, network_issue, high_traffic, dependency_failure<br>**Output**: Category + confidence score |
+| **Root Cause Analysis** | LLM-based | **Method**: GPT-4 or local model<br>**Output**: Root cause, reasoning, remediation steps |
 
 #### 1. Anomaly Detection
 

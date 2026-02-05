@@ -116,11 +116,15 @@ External Integrations:
 - Builds dependency graph
 - Tracks connection metrics
 
-#### Inspection Engine
-- Runs 60+ predefined health checks
-- Threshold-based rules
-- Trend-based anomaly detection
-- Infrastructure-specific checks
+#### Predefined Inspections
+| Inspection | Category | Threshold |
+|------------|----------|-----------|
+| High Error Rate | Availability | error_rate > 1% |
+| Slow Response | Performance | p95_latency > baseline * 1.5 |
+| Memory Leak | Resources | memory continuously increasing |
+| DB Pool Exhaustion | Database | active_connections > 90% |
+| High CPU Usage | Resources | cpu_usage > 80% |
+| Network Latency | Network | network_latency > 50ms |
 
 #### SLO Tracker
 - Prometheus-based SLI calculation
@@ -193,12 +197,13 @@ External Integrations:
 
 **Technology**: Python 3.10+, Flask, scikit-learn, TensorFlow
 
-**Features**:
-- **Anomaly Detection**: Isolation Forest algorithm
-- **Incident Classification**: Random Forest classifier
-- **Pattern Recognition**: Time-series analysis
-- **Root Cause Explanation**: LLM integration (GPT-4 or local models)
-- **Correlation Analysis**: Multi-metric correlation
+#### ML Models
+
+| Feature | Algorithm/Method | Details |
+|---------|-----------------|---------|
+| **Anomaly Detection** | Isolation Forest | **Input**: Error rate, latency, CPU, memory, request rate<br>**Output**: Normal (1) or Anomaly (-1) |
+| **Incident Classification** | Random Forest | **Categories**: database_slowdown, memory_leak, network_issue, high_traffic, dependency_failure<br>**Output**: Category + confidence score |
+| **Root Cause Analysis** | LLM-based | **Method**: GPT-4 or local model<br>**Output**: Root cause, reasoning, remediation steps |
 
 **API Endpoints**:
 - `POST /analyze` - Analyze incident
