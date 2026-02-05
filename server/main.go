@@ -614,6 +614,26 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		c.JSON(http.StatusOK, gin.H{"service": service, "costs": costs})
 	})
 
+	// BACKSTAGE ALIAS: Get costs for an application
+	r.GET("/api/v1/applications/:service/costs", func(c *gin.Context) {
+		service := c.Param("service")
+		period := c.DefaultQuery("period", "30d")
+		costs := costTracker.GetCostByService(service, period)
+		
+		total := 0.0
+		for _, v := range costs {
+			total += v.Cost
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"application_id": service,
+			"total_cost":     total,
+			"currency":       "$",
+			"trend_percent":  5.2, // Mock trend for demo
+			"data":           costs,
+		})
+	})
+
 	// Get cost trend for a service
 	r.GET("/api/v1/costs/:service/trend", func(c *gin.Context) {
 		service := c.Param("service")
@@ -641,6 +661,28 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		}
 		metaCache.RegisterPods(payload.Pods)
 		c.JSON(http.StatusOK, gin.H{"registered": len(payload.Pods)})
+	})
+
+	// Continuous Profiling endpoint (Mock for demo)
+	r.GET("/api/v1/applications/:service/profiles", func(c *gin.Context) {
+		service := c.Param("service")
+		// Simulate eBPF profile data
+		profiles := []map[string]interface{}{
+			{
+				"timestamp": time.Now().Format(time.RFC3339),
+				"type": "cpu",
+				"samples": 1240,
+				"stacks": []string{
+					"main.main;main.run;runtime.mcall;runtime.park_m;runtime.schedule;runtime.execute",
+					"main.main;net/http.(*Server).ListenAndServe;net/http.(*Server).Serve;net/http.(*conn).serve",
+					"main.main;github.com/gin-gonic/gin.(*Engine).Run;net/http.ListenAndServe",
+				},
+			},
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"application_id": service,
+			"profiles":       profiles,
+		})
 	})
 
 	// AI Analysis endpoint

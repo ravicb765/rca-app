@@ -23,6 +23,10 @@ services:
       - CLICKHOUSE_URL=clickhouse:9000
       - PROMETHEUS_URL=http://prometheus:9090
       - ML_SERVICE_URL=http://ml-service:5000
+      - RCA_API_KEY=rca-dev-secret-key
+      - RCA_DB_PATH=/app/data/rca-app.db
+    volumes:
+      - server-data:/app/data
 
   ml-service:
     build: ./ml-service
@@ -38,8 +42,11 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+      - RCA_APP_API_KEY=rca-dev-secret-key
+      - RCA_APP_BASE_URL=http://server:8080
     depends_on:
       - postgres
+      - server
 
   postgres:
     image: postgres:13
@@ -106,3 +113,4 @@ services:
 volumes:
   clickhouse-data:
   prometheus-data:
+  server-data:

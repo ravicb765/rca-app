@@ -15,20 +15,31 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ravicb765/rca-app/server/alerts"
+	"github.com/ravicb765/rca-app/server/cost"
+	"github.com/ravicb765/rca-app/server/deployment"
 	"github.com/ravicb765/rca-app/server/inspections"
+	"github.com/ravicb765/rca-app/server/ml"
 	"github.com/ravicb765/rca-app/server/servicemap"
 	"github.com/ravicb765/rca-app/server/slo"
 )
 
+const testAPIKey = "test-secret-key"
+
 func setupTestRouter() (*gin.Engine, *serviceStore, *MetadataCache, *AgentStore, *servicemap.ServiceMapBuilder) {
+	os.Setenv("RCA_API_KEY", testAPIKey)
 	store := &serviceStore{}
 	agentStore := NewAgentStore()
 	metaCache := NewMetadataCache()
 	builder := servicemap.NewServiceMapBuilder(metaCache)
 	inspectionEngine := inspections.NewInspectionEngine(nil)
-	sloTracker := slo.NewSLOTracker(nil) // nil client is safe as long as we don't hit /slos
+	sloTracker := slo.NewSLOTracker(nil)
+	alertManager := alerts.NewAlertManager()
+	deploymentTracker, _ := deployment.NewDeploymentTracker()
+	costTracker := cost.NewCostTracker()
+	mlClient := ml.NewClient("http://localhost:5000")
 
-	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, metaCache)
+	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, alertManager, deploymentTracker, costTracker, mlClient, metaCache, nil)
 	return r, store, metaCache, agentStore, builder
 }
 
@@ -36,6 +47,7 @@ func TestServiceMap(t *testing.T) {
 	r, _, _, _, _ := setupTestRouter()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -48,6 +60,7 @@ func TestApplications(t *testing.T) {
 	r, _, _, _, _ := setupTestRouter()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -82,7 +95,7 @@ func TestClusterAgentIntegration(t *testing.T) {
 		t.Fatalf("fetchOnce failed: %v", err)
 	}
 
-	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, metaCache)
+	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, alerts.NewAlertManager(), nil, cost.NewCostTracker(), ml.NewClient(""), metaCache, nil)
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
@@ -107,6 +120,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload := []byte(`{"hostname":"test","programs":[],"maps":{},"time":"now"}`)
 	req := httptest.NewRequest("POST", "/api/v1/agent/heartbeat", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -117,6 +131,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload = []byte(`{"source_app":"frontend","dest_app":"backend","protocol":"http","request_rate":100}`)
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -127,6 +142,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload = []byte(`{"connections":[{"source_app":"svc1","dest_app":"svc2","protocol":"tcp"},{"source_app":"svc2","dest_app":"svc3","protocol":"http","request_rate":5}]}`)
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -139,6 +155,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexBody))
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -151,6 +168,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexAscii))
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -163,6 +181,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload = []byte(fmt.Sprintf(`{"map":"myperf","data_base64":"%s"}`, b64))
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -178,6 +197,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexIpv4))
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -200,6 +220,7 @@ func TestAgentEndpoints(t *testing.T) {
 	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexIpv6))
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -208,6 +229,7 @@ func TestAgentEndpoints(t *testing.T) {
 
 	// GET service map and assert the perf events resulted in applications
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
+	req.Header.Set("X-API-Key", testAPIKey)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -220,6 +242,17 @@ func TestAgentEndpoints(t *testing.T) {
 	}
 	if _, ok := resp["servicemap"]; !ok {
 		t.Fatalf("expected servicemap in response")
+	}
+
+	// GET application analysis (DEMO mode)
+	payload = []byte(`{"application_id":"payment-service","start_time":"now-1h","end_time":"now"}`)
+	req = httptest.NewRequest("POST", "/api/v1/analyze", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for analyze, got %d", w.Code)
 	}
 
 	// Check that IPv4 connection was added (10.0.0.1:57 -> 10.0.0.2:80)
@@ -233,21 +266,7 @@ func TestAgentEndpoints(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "2001:db8::1:31") && !strings.Contains(w.Body.String(), "[2001:db8::1]:31") {
 		t.Fatalf("expected ipv6 src present in servicemap")
 	}
-	// GET service map and assert the perf events resulted in applications
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if _, ok := resp["servicemap"]; !ok {
-		t.Fatalf("expected servicemap in response")
-	}
+	// Consolidated final verification
 
 }
 
@@ -264,6 +283,7 @@ func TestMetadataRegistration(t *testing.T) {
 	// Request
 	req := httptest.NewRequest("POST", "/api/v1/metadata", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testAPIKey)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
