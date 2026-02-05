@@ -1,0 +1,46 @@
+{{- if .Values.nodeAgent.enabled -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "rca-app.fullname" . }}-node-agent
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: node-agent
+spec:
+  selector:
+    matchLabels:
+      {{- include "rca-app.selectorLabels" . | nindent 6 }}
+      component: node-agent
+  template:
+    metadata:
+      labels:
+        {{- include "rca-app.selectorLabels" . | nindent 8 }}
+        component: node-agent
+    spec:
+      hostPID: true
+      hostNetwork: true
+      containers:
+        - name: node-agent
+          image: "{{ .Values.nodeAgent.image.repository }}:{{ .Values.nodeAgent.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.nodeAgent.image.pullPolicy }}
+          securityContext:
+            privileged: true
+          env:
+            - name: RCA_APP_ENDPOINT
+              value: {{ .Values.nodeAgent.env.rcaAppEndpoint | quote }}
+          volumeMounts:
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            - name: debugfs
+              mountPath: /sys/kernel/debug
+          resources:
+            {{- toYaml .Values.nodeAgent.resources | nindent 12 }}
+      volumes:
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: debugfs
+          hostPath:
+            path: /sys/kernel/debug
+{{- end }}

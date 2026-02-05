@@ -1,0 +1,70 @@
+{{- if .Values.clickhouse.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rca-app.fullname" . }}-clickhouse
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: clickhouse
+spec:
+  selector:
+    matchLabels:
+      {{- include "rca-app.selectorLabels" . | nindent 6 }}
+      component: clickhouse
+  template:
+    metadata:
+      labels:
+        {{- include "rca-app.selectorLabels" . | nindent 8 }}
+        component: clickhouse
+    spec:
+      containers:
+        - name: clickhouse
+          image: {{ .Values.clickhouse.image }}
+          ports:
+            - containerPort: 9000
+            - containerPort: 8123
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+      volumes:
+        - name: data
+          {{- if .Values.clickhouse.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "rca-app.fullname" . }}-clickhouse
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rca-app-clickhouse
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: clickhouse
+spec:
+  ports:
+    - port: 9000
+      name: native
+    - port: 8123
+      name: http
+  selector:
+    {{- include "rca-app.selectorLabels" . | nindent 4 }}
+    component: clickhouse
+{{- if .Values.clickhouse.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rca-app.fullname" . }}-clickhouse
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: clickhouse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.clickhouse.persistence.size | quote }}
+{{- end }}
+{{- end }}

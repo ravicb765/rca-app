@@ -1,0 +1,39 @@
+{{- if .Values.redis.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rca-app.fullname" . }}-redis
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: redis
+spec:
+  selector:
+    matchLabels:
+      {{- include "rca-app.selectorLabels" . | nindent 6 }}
+      component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "rca-app.selectorLabels" . | nindent 8 }}
+        component: redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          ports:
+            - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rca-app-redis
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: redis
+spec:
+  ports:
+    - port: 6379
+  selector:
+    {{- include "rca-app.selectorLabels" . | nindent 4 }}
+    component: redis
+{{- end }}
