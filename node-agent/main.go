@@ -89,16 +89,21 @@ type NodeAgent struct {
 	cassandraQueriesTotal *prometheus.CounterVec
 	cassandraQueryLatency *prometheus.HistogramVec
 	// Container Metrics
-	containerCpuSeconds *prometheus.CounterVec
-	containerMemBytes   *prometheus.GaugeVec
-	containerNetBytes   *prometheus.CounterVec
-	containerDiskBytes  *prometheus.CounterVec
-	containerOomKills   *prometheus.CounterVec
-	containerPageFaults *prometheus.CounterVec
-	cgroupCache         map[uint64]string // Cache cgroup_id -> container_name
-	lastCgroupScan      time.Time
-	stackCounts         map[string]int
-	stackCountsMu       sync.Mutex
+	containerCpuSeconds      *prometheus.CounterVec
+	containerMemBytes        *prometheus.GaugeVec
+	containerNetBytes        *prometheus.CounterVec
+	containerDiskBytes       *prometheus.CounterVec
+	containerOomKills        *prometheus.CounterVec
+	containerPageFaults      *prometheus.CounterVec
+	containerContextSwitches *prometheus.CounterVec
+	containerBlockIOLatency  *prometheus.HistogramVec
+	containerRunqLatency     *prometheus.HistogramVec
+	containerMallocBytes     *prometheus.CounterVec
+	containerFutexWait       *prometheus.HistogramVec
+	cgroupCache              map[uint64]string // Cache cgroup_id -> container_name
+	lastCgroupScan           time.Time
+	stackCounts              map[string]int
+	stackCountsMu            sync.Mutex
 }
 
 func NewNodeAgent(cfg *Config) *NodeAgent {
@@ -349,6 +354,54 @@ func NewNodeAgent(cfg *Config) *NodeAgent {
 	)
 	prometheus.MustRegister(na.containerPageFaults)
 
+	na.containerContextSwitches = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "node_agent_container_context_switches_total",
+			Help: "Total number of context switches per container",
+		},
+		[]string{"container_name"},
+	)
+	prometheus.MustRegister(na.containerContextSwitches)
+
+	na.containerBlockIOLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "node_agent_container_block_io_latency_seconds",
+			Help:    "Block I/O latency distribution per container",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"container_name"},
+	)
+	prometheus.MustRegister(na.containerBlockIOLatency)
+
+	na.containerRunqLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "node_agent_container_runq_latency_seconds",
+			Help:    "Run queue latency distribution per container",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"container_name"},
+	)
+	prometheus.MustRegister(na.containerRunqLatency)
+
+	na.containerMallocBytes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "node_agent_container_malloc_bytes_total",
+			Help: "Total bytes allocated via malloc per container",
+		},
+		[]string{"container_name"},
+	)
+	prometheus.MustRegister(na.containerMallocBytes)
+
+	na.containerFutexWait = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "node_agent_container_futex_wait_seconds",
+			Help:    "Futex wait duration distribution per container",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"container_name"},
+	)
+	prometheus.MustRegister(na.containerFutexWait)
+
 	return na
 }
 
@@ -446,6 +499,12 @@ func (a *NodeAgent) loadEBPF() error {
 		log.Printf("Error adding port 5433 to yugabytedb tracer: %v", err)
 	}
 
+	// Attach Malloc tracer to libc (assuming standard path, in prod this needs to be dynamic)
+	// For example purposes, we assume /lib/x86_64-linux-gnu/libc.so.6
+	if err := mgr.AttachMalloc("/lib/x86_64-linux-gnu/libc.so.6"); err != nil {
+		log.Printf("Error attaching malloc tracer: %v", err)
+	}
+
 	// Attach Profiler (runs on all CPUs but filters by map)
 	if err := mgr.AttachProfiler(); err != nil {
 		log.Printf("Error attaching profiler: %v", err)
@@ -462,6 +521,16 @@ func (a *NodeAgent) loadEBPF() error {
 	go a.handleStackEvents(mgr.StackReader())
 	a.wg.Add(1)
 	go a.handlePageFaultEvents(mgr.PageFaultReader())
+	a.wg.Add(1)
+	go a.handleContextSwitchEvents(mgr.ContextSwitchReader())
+	a.wg.Add(1)
+	go a.handleBlockIOEvents(mgr.BlockIOReader())
+	a.wg.Add(1)
+	go a.handleRunqLatencyEvents(mgr.RunqLatencyReader())
+	a.wg.Add(1)
+	go a.handleMallocEvents(mgr.MallocReader())
+	a.wg.Add(1)
+	go a.handleFutexEvents(mgr.FutexReader())
 
 	return nil
 }
@@ -1125,6 +1194,110 @@ func (a *NodeAgent) handlePageFaultEvents(rd *perf.Reader) {
 		// Assuming we update C code or just log for now.
 		// Since I cannot change C code in this step (it was step 1), I will just log it.
 		// log.Printf("Page Fault: pid=%d addr=0x%x ip=0x%x comm=%s", event.Pid, event.Address, event.Ip, event.Comm)
+	}
+}
+
+func (a *NodeAgent) handleContextSwitchEvents(rd *perf.Reader) {
+	defer a.wg.Done()
+	for {
+		record, err := rd.Read()
+		if err != nil {
+			if perf.IsClosed(err) {
+				return
+			}
+			continue
+		}
+
+		var event agentebpf.ContextSwitchEvent
+		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+			continue
+		}
+
+		// Similar to PageFaults, we'd need cgroup mapping here.
+	}
+}
+
+func (a *NodeAgent) handleBlockIOEvents(rd *perf.Reader) {
+	defer a.wg.Done()
+	for {
+		record, err := rd.Read()
+		if err != nil {
+			if perf.IsClosed(err) {
+				return
+			}
+			continue
+		}
+
+		var event agentebpf.BlockIOEvent
+		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+			continue
+		}
+
+		// Log or export metric. For now, just log to demonstrate.
+		// log.Printf("Block IO: dev=%d sector=%d latency=%dns comm=%s", event.Dev, event.Sector, event.LatencyNs, event.Comm)
+	}
+}
+
+func (a *NodeAgent) handleRunqLatencyEvents(rd *perf.Reader) {
+	defer a.wg.Done()
+	for {
+		record, err := rd.Read()
+		if err != nil {
+			if perf.IsClosed(err) {
+				return
+			}
+			continue
+		}
+
+		var event agentebpf.RunqLatencyEvent
+		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+			continue
+		}
+
+		// Log or export metric. For now, just log to demonstrate.
+		// log.Printf("Runq Latency: pid=%d latency=%dns comm=%s", event.Pid, event.LatencyNs, event.Comm)
+	}
+}
+
+func (a *NodeAgent) handleMallocEvents(rd *perf.Reader) {
+	defer a.wg.Done()
+	for {
+		record, err := rd.Read()
+		if err != nil {
+			if perf.IsClosed(err) {
+				return
+			}
+			continue
+		}
+
+		var event agentebpf.MallocEvent
+		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+			continue
+		}
+
+		// Log or export metric. For now, just log to demonstrate.
+		// log.Printf("Malloc: pid=%d size=%d comm=%s", event.Pid, event.Size, event.Comm)
+	}
+}
+
+func (a *NodeAgent) handleFutexEvents(rd *perf.Reader) {
+	defer a.wg.Done()
+	for {
+		record, err := rd.Read()
+		if err != nil {
+			if perf.IsClosed(err) {
+				return
+			}
+			continue
+		}
+
+		var event agentebpf.FutexEvent
+		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+			continue
+		}
+
+		// Log or export metric. For now, just log to demonstrate.
+		// log.Printf("Futex: pid=%d duration=%dns comm=%s", event.Pid, event.DurationNs, event.Comm)
 	}
 }
 

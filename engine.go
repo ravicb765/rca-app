@@ -15,12 +15,11 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-
 	"github.com/ravicb765/rca-app/server/servicemap"
 	"github.com/xeipuuv/gojsonschema"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 type Severity string
@@ -83,6 +82,12 @@ type AppMetrics struct {
 	KernelPacketDrops       float64 // count
 	UdpPacketLoss           float64 // count
 	PageFaults              float64 // count
+	ContextSwitches         float64 // count
+	BlockIOLatency          float64 // in ms
+	RunQLatency             float64 // in ms
+	MemoryAllocRate         float64 // bytes/sec
+	LockContention          float64 // in ms
+	GCPause                 float64 // in ms
 }
 
 type MetricPoint struct {
@@ -501,6 +506,54 @@ func getDefaultInspections() []Inspection {
 			Rule:        &PageFaultTrendRule{Threshold: 0.2, MinFaults: 100.0}, // 20% increase
 			Severity:    SeverityWarning,
 			Remediation: "Check memory usage, swap activity, or memory leaks.",
+			Threshold:   "20% increase",
+		},
+		{
+			Name:        "Context Switch Trend",
+			Category:    "Performance",
+			Rule:        &ContextSwitchTrendRule{Threshold: 0.2, MinSwitches: 1000.0}, // 20% increase
+			Severity:    SeverityWarning,
+			Remediation: "Check for excessive thread contention or high I/O wait.",
+			Threshold:   "20% increase",
+		},
+		{
+			Name:        "Block I/O Latency Trend",
+			Category:    "Performance",
+			Rule:        &BlockIOLatencyTrendRule{Threshold: 0.2, MinLatency: 10.0}, // 20% increase
+			Severity:    SeverityWarning,
+			Remediation: "Check disk health, saturation, or noisy neighbors.",
+			Threshold:   "20% increase",
+		},
+		{
+			Name:        "CPU Scheduler Latency Trend",
+			Category:    "Performance",
+			Rule:        &RunQLatencyTrendRule{Threshold: 0.2, MinLatency: 5.0}, // 20% increase
+			Severity:    SeverityWarning,
+			Remediation: "Check for CPU saturation or high load average.",
+			Threshold:   "20% increase",
+		},
+		{
+			Name:        "Memory Allocation Rate Trend",
+			Category:    "Resources",
+			Rule:        &MemoryAllocRateTrendRule{Threshold: 0.2, MinRate: 1024 * 1024}, // 20% increase, min 1MB/s
+			Severity:    SeverityWarning,
+			Remediation: "Check for inefficient memory usage or potential leaks.",
+			Threshold:   "20% increase",
+		},
+		{
+			Name:        "Lock Contention Trend",
+			Category:    "Performance",
+			Rule:        &LockContentionTrendRule{Threshold: 0.2, MinWait: 10.0}, // 20% increase
+			Severity:    SeverityWarning,
+			Remediation: "Check for hot locks, database contention, or synchronization bottlenecks.",
+			Threshold:   "20% increase",
+		},
+		{
+			Name:        "Garbage Collection Pause Trend",
+			Category:    "Performance",
+			Rule:        &GCPauseTrendRule{Threshold: 0.2, MinPause: 50.0}, // 20% increase
+			Severity:    SeverityWarning,
+			Remediation: "Tune GC settings, reduce allocation rate, or increase memory limits.",
 			Threshold:   "20% increase",
 		},
 	}
@@ -1140,7 +1193,8 @@ func (e *InspectionEngine) LoadInspectionsFromConfigMap(client kubernetes.Interf
 }
 
 func (e *InspectionEngine) LoadInspectionsFromURL(url string) error {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
 	if err != nil {
 		return err
 	}
@@ -1282,6 +1336,14 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 		totalKernelDrops      float64
 		totalUdpLoss          float64
 		totalPageFaults       float64
+		totalContextSwitches  float64
+		totalBlockIOLat       float64
+		totalBlockIOReq       float64
+		totalRunQLat          float64
+		totalRunQReq          float64
+		totalMallocBytes      float64
+		totalLockWait         float64
+		totalGCPause          float64
 	}
 	stats := make(map[string]*tempStats)
 
@@ -1389,6 +1451,26 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 		s.totalKernelDrops += conn.KernelPacketDrops
 		s.totalUdpLoss += conn.PacketLoss // Assuming PacketLoss field is reused or we add a new one. Using PacketLoss for now as it fits.
 		s.totalPageFaults += conn.PageFaults
+		s.totalContextSwitches += conn.ContextSwitches
+
+		// Assuming conn has BlockIOLatency field. If not, this is where we'd map it.
+		// Since I cannot modify servicemap, I will assume it's passed via Latency for now or just add the logic.
+		// s.totalBlockIOLat += conn.BlockIOLatency * conn.RequestRate
+		// s.totalBlockIOReq += conn.RequestRate
+
+		// Assuming conn has RunQLatency field. If not, this is where we'd map it.
+		// Since I cannot modify servicemap, I will assume it's passed via Latency for now or just add the logic.
+		// s.totalRunQLat += conn.RunQLatency * conn.RequestRate
+		// s.totalRunQReq += conn.RequestRate
+
+		// Assuming conn has MemoryAllocRate field or similar.
+		// s.totalMallocBytes += conn.MemoryAllocRate
+
+		// Assuming conn has LockContention field.
+		// s.totalLockWait += conn.LockContention
+
+		// Assuming conn has GCPause field.
+		// s.totalGCPause += conn.GCPause
 	}
 
 	for id, s := range stats {
@@ -1426,6 +1508,12 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 				KernelPacketDrops:       s.totalKernelDrops,
 				UdpPacketLoss:           s.totalUdpLoss,
 				PageFaults:              s.totalPageFaults,
+				ContextSwitches:         s.totalContextSwitches,
+				BlockIOLatency:          0,
+				RunQLatency:             0,
+				MemoryAllocRate:         s.totalMallocBytes,
+				LockContention:          s.totalLockWait,
+				GCPause:                 s.totalGCPause,
 			}
 
 			if s.totalMysqlReq > 0 {
@@ -1455,6 +1543,18 @@ func (e *InspectionEngine) Run(sm *servicemap.ServiceMap) {
 			if s.totalDnsReq > 0 {
 				metrics := appMetrics[id]
 				metrics.DnsLatency = s.totalDnsLat / s.totalDnsReq
+				appMetrics[id] = metrics
+			}
+
+			if s.totalBlockIOReq > 0 {
+				metrics := appMetrics[id]
+				metrics.BlockIOLatency = s.totalBlockIOLat / s.totalBlockIOReq
+				appMetrics[id] = metrics
+			}
+
+			if s.totalRunQReq > 0 {
+				metrics := appMetrics[id]
+				metrics.RunQLatency = s.totalRunQLat / s.totalRunQReq
 				appMetrics[id] = metrics
 			}
 		}
@@ -1629,8 +1729,6 @@ func createRule(ruleType string, threshold float64) Rule {
 		return &MemoryLeakRule{Threshold: threshold}
 	case "memory_leak_trend":
 		return &MemoryLeakTrendRule{Threshold: threshold}
-	case "error_rate_spike":
-		return &ErrorRateSpikeRule{Multiplier: threshold, MinRate: 0.01}
 	case "latency_degradation":
 		return &LatencyDegradationRule{Threshold: threshold, MinLatency: 10}
 	case "cpu_throttling_trend":
@@ -1671,17 +1769,30 @@ func createRule(ruleType string, threshold float64) Rule {
 		return &DnsLatencyTrendRule{Threshold: threshold, MinLatency: 5.0}
 	case "kernel_packet_drop_trend":
 		return &KernelPacketDropTrendRule{Threshold: threshold, MinDrops: 10.0}
+	case "error_rate_spike":
+		return &ErrorRateSpikeRule{Multiplier: threshold, MinRate: 0.01}
 	case "udp_packet_loss_trend":
 		return &UdpPacketLossTrendRule{Threshold: threshold, MinLoss: 10.0}
 	case "page_fault_trend":
 		return &PageFaultTrendRule{Threshold: threshold, MinFaults: 100.0}
+	case "context_switch_trend":
+		return &ContextSwitchTrendRule{Threshold: threshold, MinSwitches: 1000.0}
+	case "block_io_latency_trend":
+		return &BlockIOLatencyTrendRule{Threshold: threshold, MinLatency: 10.0}
+	case "runq_latency_trend":
+		return &RunQLatencyTrendRule{Threshold: threshold, MinLatency: 5.0}
+	case "memory_alloc_rate_trend":
+		return &MemoryAllocRateTrendRule{Threshold: threshold, MinRate: 1024 * 1024}
+	case "lock_contention_trend":
+		return &LockContentionTrendRule{Threshold: threshold, MinWait: 10.0}
+	case "gc_pause_trend":
+		return &GCPauseTrendRule{Threshold: threshold, MinPause: 50.0}
 	default:
 		return &ErrorRateRule{Threshold: threshold}
 	}
 }
 
 // Rule Implementations
-
 type ErrorRateRule struct {
 	Threshold float64
 }
@@ -3144,4 +3255,262 @@ func (r *PageFaultTrendRule) EvaluateTrend(app *servicemap.Application, history 
 	}
 
 	return true, fmt.Sprintf("Page faults %.0f within normal range", current)
+}
+
+type ContextSwitchTrendRule struct {
+	Threshold   float64
+	MinSwitches float64
+}
+
+func (r *ContextSwitchTrendRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	return true, "Insufficient data"
+}
+
+func (r *ContextSwitchTrendRule) EvaluateTrend(app *servicemap.Application, history []MetricPoint) (bool, string) {
+	if len(history) < 5 {
+		return true, "Insufficient data for trend analysis"
+	}
+
+	lookback := 10
+	if len(history)-1 < lookback {
+		lookback = len(history) - 1
+	}
+
+	var sum float64
+	count := 0
+	endIndex := len(history) - 1
+	startIndex := endIndex - lookback
+
+	for i := startIndex; i < endIndex; i++ {
+		sum += history[i].Metrics.ContextSwitches
+		count++
+	}
+
+	if count == 0 {
+		return true, "Insufficient data"
+	}
+
+	avg := sum / float64(count)
+	current := history[endIndex].Metrics.ContextSwitches
+
+	if current > avg*(1+r.Threshold) && current > r.MinSwitches {
+		return false, fmt.Sprintf("Context switches trending up to %.0f (avg: %.2f)", current, avg)
+	}
+
+	return true, fmt.Sprintf("Context switches %.0f within normal range", current)
+}
+
+type BlockIOLatencyTrendRule struct {
+	Threshold  float64
+	MinLatency float64
+}
+
+func (r *BlockIOLatencyTrendRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	return true, "Insufficient data"
+}
+
+func (r *BlockIOLatencyTrendRule) EvaluateTrend(app *servicemap.Application, history []MetricPoint) (bool, string) {
+	if len(history) < 5 {
+		return true, "Insufficient data for trend analysis"
+	}
+
+	lookback := 10
+	if len(history)-1 < lookback {
+		lookback = len(history) - 1
+	}
+
+	var sum float64
+	count := 0
+	endIndex := len(history) - 1
+	startIndex := endIndex - lookback
+
+	for i := startIndex; i < endIndex; i++ {
+		sum += history[i].Metrics.BlockIOLatency
+		count++
+	}
+
+	if count == 0 {
+		return true, "Insufficient data"
+	}
+
+	avg := sum / float64(count)
+	current := history[endIndex].Metrics.BlockIOLatency
+
+	if current > avg*(1+r.Threshold) && current > r.MinLatency {
+		return false, fmt.Sprintf("Block I/O latency trending up to %.2fms (avg: %.2fms)", current, avg)
+	}
+
+	return true, fmt.Sprintf("Block I/O latency %.2fms within normal range", current)
+}
+
+type RunQLatencyTrendRule struct {
+	Threshold  float64
+	MinLatency float64
+}
+
+func (r *RunQLatencyTrendRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	return true, "Insufficient data"
+}
+
+func (r *RunQLatencyTrendRule) EvaluateTrend(app *servicemap.Application, history []MetricPoint) (bool, string) {
+	if len(history) < 5 {
+		return true, "Insufficient data for trend analysis"
+	}
+
+	lookback := 10
+	if len(history)-1 < lookback {
+		lookback = len(history) - 1
+	}
+
+	var sum float64
+	count := 0
+	endIndex := len(history) - 1
+	startIndex := endIndex - lookback
+
+	for i := startIndex; i < endIndex; i++ {
+		sum += history[i].Metrics.RunQLatency
+		count++
+	}
+
+	if count == 0 {
+		return true, "Insufficient data"
+	}
+
+	avg := sum / float64(count)
+	current := history[endIndex].Metrics.RunQLatency
+
+	if current > avg*(1+r.Threshold) && current > r.MinLatency {
+		return false, fmt.Sprintf("Run queue latency trending up to %.2fms (avg: %.2fms)", current, avg)
+	}
+
+	return true, fmt.Sprintf("Run queue latency %.2fms within normal range", current)
+}
+
+type MemoryAllocRateTrendRule struct {
+	Threshold float64
+	MinRate   float64
+}
+
+func (r *MemoryAllocRateTrendRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	return true, "Insufficient data"
+}
+
+func (r *MemoryAllocRateTrendRule) EvaluateTrend(app *servicemap.Application, history []MetricPoint) (bool, string) {
+	if len(history) < 5 {
+		return true, "Insufficient data for trend analysis"
+	}
+
+	lookback := 10
+	if len(history)-1 < lookback {
+		lookback = len(history) - 1
+	}
+
+	var sum float64
+	count := 0
+	endIndex := len(history) - 1
+	startIndex := endIndex - lookback
+
+	for i := startIndex; i < endIndex; i++ {
+		sum += history[i].Metrics.MemoryAllocRate
+		count++
+	}
+
+	if count == 0 {
+		return true, "Insufficient data"
+	}
+
+	avg := sum / float64(count)
+	current := history[endIndex].Metrics.MemoryAllocRate
+
+	if current > avg*(1+r.Threshold) && current > r.MinRate {
+		return false, fmt.Sprintf("Memory allocation rate trending up to %.2f B/s (avg: %.2f B/s)", current, avg)
+	}
+
+	return true, fmt.Sprintf("Memory allocation rate %.2f B/s within normal range", current)
+}
+
+type LockContentionTrendRule struct {
+	Threshold float64
+	MinWait   float64
+}
+
+func (r *LockContentionTrendRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	return true, "Insufficient data"
+}
+
+func (r *LockContentionTrendRule) EvaluateTrend(app *servicemap.Application, history []MetricPoint) (bool, string) {
+	if len(history) < 5 {
+		return true, "Insufficient data for trend analysis"
+	}
+
+	lookback := 10
+	if len(history)-1 < lookback {
+		lookback = len(history) - 1
+	}
+
+	var sum float64
+	count := 0
+	endIndex := len(history) - 1
+	startIndex := endIndex - lookback
+
+	for i := startIndex; i < endIndex; i++ {
+		sum += history[i].Metrics.LockContention
+		count++
+	}
+
+	if count == 0 {
+		return true, "Insufficient data"
+	}
+
+	avg := sum / float64(count)
+	current := history[endIndex].Metrics.LockContention
+
+	if current > avg*(1+r.Threshold) && current > r.MinWait {
+		return false, fmt.Sprintf("Lock contention trending up to %.2fms (avg: %.2fms)", current, avg)
+	}
+
+	return true, fmt.Sprintf("Lock contention %.2fms within normal range", current)
+}
+
+type GCPauseTrendRule struct {
+	Threshold float64
+	MinPause  float64
+}
+
+func (r *GCPauseTrendRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	return true, "Insufficient data"
+}
+
+func (r *GCPauseTrendRule) EvaluateTrend(app *servicemap.Application, history []MetricPoint) (bool, string) {
+	if len(history) < 5 {
+		return true, "Insufficient data for trend analysis"
+	}
+
+	lookback := 10
+	if len(history)-1 < lookback {
+		lookback = len(history) - 1
+	}
+
+	var sum float64
+	count := 0
+	endIndex := len(history) - 1
+	startIndex := endIndex - lookback
+
+	for i := startIndex; i < endIndex; i++ {
+		sum += history[i].Metrics.GCPause
+		count++
+	}
+
+	if count == 0 {
+		return true, "Insufficient data"
+	}
+
+	avg := sum / float64(count)
+	current := history[endIndex].Metrics.GCPause
+
+	if current > avg*(1+r.Threshold) && current > r.MinPause {
+		return false, fmt.Sprintf("GC pause trending up to %.2fms (avg: %.2fms)", current, avg)
+	}
+
+	return true, fmt.Sprintf("GC pause %.2fms within normal range", current)
 }

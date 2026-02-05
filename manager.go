@@ -141,31 +141,78 @@ type PageFaultEvent struct {
 	Comm    [16]byte
 }
 
+// ContextSwitchEvent matches the C struct layout
+type ContextSwitchEvent struct {
+	PrevPid  uint32
+	NextPid  uint32
+	NextComm [16]byte
+}
+
+// BlockIOEvent matches the C struct layout
+type BlockIOEvent struct {
+	Dev       uint32
+	Sector    uint64
+	LatencyNs uint64
+	Len       uint32
+	Comm      [16]byte
+}
+
+// RunqLatencyEvent matches the C struct layout
+type RunqLatencyEvent struct {
+	Pid       uint32
+	LatencyNs uint64
+	Comm      [16]byte
+}
+
+// MallocEvent matches the C struct layout
+type MallocEvent struct {
+	Pid  uint32
+	Size uint64
+	Comm [16]byte
+}
+
+// FutexEvent matches the C struct layout
+type FutexEvent struct {
+	Pid        uint32
+	DurationNs uint64
+	Comm       [16]byte
+}
+
 // Manager handles the eBPF lifecycle
 type Manager struct {
-	netObjs           *NetworkTracerObjects
-	httpObjs          *HttpTracerObjects
-	oomObjs           *OomTracerObjects
-	processObjs       *ProcessTracerObjects
-	fileObjs          *FileTracerObjects
-	tcpRetransObjs    *TcpRetransTracerObjects
-	dnsObjs           *DnsTracerObjects
-	kfreeSkbObjs      *KfreeSkbTracerObjects
-	processExitObjs   *ProcessExitTracerObjects
-	udpObjs           *UdpTracerObjects
-	pageFaultObjs     *PageFaultTracerObjects
-	links             []link.Link
-	netReader         *perf.Reader
-	httpReader        *perf.Reader
-	oomReader         *perf.Reader
-	processReader     *perf.Reader
-	fileReader        *perf.Reader
-	tcpRetransReader  *perf.Reader
-	dnsReader         *perf.Reader
-	kfreeSkbReader    *perf.Reader
-	processExitReader *perf.Reader
-	udpReader         *perf.Reader
-	pageFaultReader   *perf.Reader
+	netObjs             *NetworkTracerObjects
+	httpObjs            *HttpTracerObjects
+	oomObjs             *OomTracerObjects
+	processObjs         *ProcessTracerObjects
+	fileObjs            *FileTracerObjects
+	tcpRetransObjs      *TcpRetransTracerObjects
+	dnsObjs             *DnsTracerObjects
+	kfreeSkbObjs        *KfreeSkbTracerObjects
+	processExitObjs     *ProcessExitTracerObjects
+	udpObjs             *UdpTracerObjects
+	pageFaultObjs       *PageFaultTracerObjects
+	contextSwitchObjs   *ContextSwitchTracerObjects
+	blockIOObjs         *BlockIOTracerObjects
+	runqLatencyObjs     *RunqLatencyTracerObjects
+	mallocObjs          *MallocTracerObjects
+	futexObjs           *FutexTracerObjects
+	links               []link.Link
+	netReader           *perf.Reader
+	httpReader          *perf.Reader
+	oomReader           *perf.Reader
+	processReader       *perf.Reader
+	fileReader          *perf.Reader
+	tcpRetransReader    *perf.Reader
+	dnsReader           *perf.Reader
+	kfreeSkbReader      *perf.Reader
+	processExitReader   *perf.Reader
+	udpReader           *perf.Reader
+	pageFaultReader     *perf.Reader
+	contextSwitchReader *perf.Reader
+	blockIOReader       *perf.Reader
+	runqLatencyReader   *perf.Reader
+	mallocReader        *perf.Reader
+	futexReader         *perf.Reader
 }
 
 // LoadAndAttach loads the eBPF program and attaches kprobes
@@ -230,7 +277,32 @@ func LoadAndAttach() (*Manager, error) {
 		return nil, fmt.Errorf("loading page_fault objects: %w", err)
 	}
 
-	m := &Manager{netObjs: &objs, httpObjs: &httpObjs, oomObjs: &oomObjs, processObjs: &processObjs, fileObjs: &fileObjs, tcpRetransObjs: &tcpRetransObjs, dnsObjs: &dnsObjs, kfreeSkbObjs: &kfreeSkbObjs, processExitObjs: &processExitObjs, udpObjs: &udpObjs, pageFaultObjs: &pageFaultObjs}
+	contextSwitchObjs := ContextSwitchTracerObjects{}
+	if err := LoadContextSwitchTracerObjects(&contextSwitchObjs, nil); err != nil {
+		return nil, fmt.Errorf("loading context_switch objects: %w", err)
+	}
+
+	blockIOObjs := BlockIOTracerObjects{}
+	if err := LoadBlockIOTracerObjects(&blockIOObjs, nil); err != nil {
+		return nil, fmt.Errorf("loading block_io objects: %w", err)
+	}
+
+	runqLatencyObjs := RunqLatencyTracerObjects{}
+	if err := LoadRunqLatencyTracerObjects(&runqLatencyObjs, nil); err != nil {
+		return nil, fmt.Errorf("loading runq_latency objects: %w", err)
+	}
+
+	mallocObjs := MallocTracerObjects{}
+	if err := LoadMallocTracerObjects(&mallocObjs, nil); err != nil {
+		return nil, fmt.Errorf("loading malloc objects: %w", err)
+	}
+
+	futexObjs := FutexTracerObjects{}
+	if err := LoadFutexTracerObjects(&futexObjs, nil); err != nil {
+		return nil, fmt.Errorf("loading futex objects: %w", err)
+	}
+
+	m := &Manager{netObjs: &objs, httpObjs: &httpObjs, oomObjs: &oomObjs, processObjs: &processObjs, fileObjs: &fileObjs, tcpRetransObjs: &tcpRetransObjs, dnsObjs: &dnsObjs, kfreeSkbObjs: &kfreeSkbObjs, processExitObjs: &processExitObjs, udpObjs: &udpObjs, pageFaultObjs: &pageFaultObjs, contextSwitchObjs: &contextSwitchObjs, blockIOObjs: &blockIOObjs, runqLatencyObjs: &runqLatencyObjs, mallocObjs: &mallocObjs, futexObjs: &futexObjs}
 
 	// --- Attach Network Tracer Kprobes ---
 	// tcp_connect
@@ -397,6 +469,73 @@ func LoadAndAttach() (*Manager, error) {
 	}
 	m.links = append(m.links, tpPf)
 
+	// --- Attach Context Switch Tracer Tracepoints ---
+	// sched/sched_switch
+	tpCs, err := link.Tracepoint("sched", "sched_switch", contextSwitchObjs.TraceSchedSwitch, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/sched/sched_switch: %w", err)
+	}
+	m.links = append(m.links, tpCs)
+
+	// --- Attach Block IO Tracer Tracepoints ---
+	// block/block_rq_issue
+	tpBlkIssue, err := link.Tracepoint("block", "block_rq_issue", blockIOObjs.TraceBlockRqIssue, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/block/block_rq_issue: %w", err)
+	}
+	m.links = append(m.links, tpBlkIssue)
+
+	// block/block_rq_complete
+	tpBlkComplete, err := link.Tracepoint("block", "block_rq_complete", blockIOObjs.TraceBlockRqComplete, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/block/block_rq_complete: %w", err)
+	}
+	m.links = append(m.links, tpBlkComplete)
+
+	// --- Attach Runq Latency Tracer Tracepoints ---
+	// sched/sched_wakeup
+	tpWakeup, err := link.Tracepoint("sched", "sched_wakeup", runqLatencyObjs.TraceSchedWakeup, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/sched/sched_wakeup: %w", err)
+	}
+	m.links = append(m.links, tpWakeup)
+
+	// sched/sched_wakeup_new
+	tpWakeupNew, err := link.Tracepoint("sched", "sched_wakeup_new", runqLatencyObjs.TraceSchedWakeupNew, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/sched/sched_wakeup_new: %w", err)
+	}
+	m.links = append(m.links, tpWakeupNew)
+
+	// sched/sched_switch (for runq latency)
+	tpSwitchRunq, err := link.Tracepoint("sched", "sched_switch", runqLatencyObjs.TraceSchedSwitch, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/sched/sched_switch (runq): %w", err)
+	}
+	m.links = append(m.links, tpSwitchRunq)
+
+	// --- Attach Futex Tracer Tracepoints ---
+	// syscalls/sys_enter_futex
+	tpFutexEnter, err := link.Tracepoint("syscalls", "sys_enter_futex", futexObjs.TraceEnterFutex, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/syscalls/sys_enter_futex: %w", err)
+	}
+	m.links = append(m.links, tpFutexEnter)
+
+	tpFutexExit, err := link.Tracepoint("syscalls", "sys_exit_futex", futexObjs.TraceExitFutex, nil)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("attaching tracepoint/syscalls/sys_exit_futex: %w", err)
+	}
+	m.links = append(m.links, tpFutexExit)
+
 	// --- Create perf readers ---
 	rd, err := perf.NewReader(objs.Events, 4096)
 	if err != nil {
@@ -475,6 +614,41 @@ func LoadAndAttach() (*Manager, error) {
 	}
 	m.pageFaultReader = pfRd
 
+	csRd, err := perf.NewReader(contextSwitchObjs.ContextSwitchEvents, 4096)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("creating context_switch perf reader: %w", err)
+	}
+	m.contextSwitchReader = csRd
+
+	blkRd, err := perf.NewReader(blockIOObjs.BlockIoEvents, 4096)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("creating block_io perf reader: %w", err)
+	}
+	m.blockIOReader = blkRd
+
+	runqRd, err := perf.NewReader(runqLatencyObjs.RunqEvents, 4096)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("creating runq_latency perf reader: %w", err)
+	}
+	m.runqLatencyReader = runqRd
+
+	mallocRd, err := perf.NewReader(mallocObjs.MallocEvents, 4096)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("creating malloc perf reader: %w", err)
+	}
+	m.mallocReader = mallocRd
+
+	futexRd, err := perf.NewReader(futexObjs.FutexEvents, 4096)
+	if err != nil {
+		m.Close()
+		return nil, fmt.Errorf("creating futex perf reader: %w", err)
+	}
+	m.futexReader = futexRd
+
 	return m, nil
 }
 
@@ -512,6 +686,21 @@ func (m *Manager) Close() {
 	if m.pageFaultReader != nil {
 		m.pageFaultReader.Close()
 	}
+	if m.contextSwitchReader != nil {
+		m.contextSwitchReader.Close()
+	}
+	if m.blockIOReader != nil {
+		m.blockIOReader.Close()
+	}
+	if m.runqLatencyReader != nil {
+		m.runqLatencyReader.Close()
+	}
+	if m.mallocReader != nil {
+		m.mallocReader.Close()
+	}
+	if m.futexReader != nil {
+		m.futexReader.Close()
+	}
 	for _, l := range m.links {
 		l.Close()
 	}
@@ -547,6 +736,21 @@ func (m *Manager) Close() {
 	}
 	if m.pageFaultObjs != nil {
 		m.pageFaultObjs.Close()
+	}
+	if m.contextSwitchObjs != nil {
+		m.contextSwitchObjs.Close()
+	}
+	if m.blockIOObjs != nil {
+		m.blockIOObjs.Close()
+	}
+	if m.runqLatencyObjs != nil {
+		m.runqLatencyObjs.Close()
+	}
+	if m.mallocObjs != nil {
+		m.mallocObjs.Close()
+	}
+	if m.futexObjs != nil {
+		m.futexObjs.Close()
 	}
 }
 
@@ -592,6 +796,26 @@ func (m *Manager) UdpReader() *perf.Reader {
 
 func (m *Manager) PageFaultReader() *perf.Reader {
 	return m.pageFaultReader
+}
+
+func (m *Manager) ContextSwitchReader() *perf.Reader {
+	return m.contextSwitchReader
+}
+
+func (m *Manager) BlockIOReader() *perf.Reader {
+	return m.blockIOReader
+}
+
+func (m *Manager) RunqLatencyReader() *perf.Reader {
+	return m.runqLatencyReader
+}
+
+func (m *Manager) MallocReader() *perf.Reader {
+	return m.mallocReader
+}
+
+func (m *Manager) FutexReader() *perf.Reader {
+	return m.futexReader
 }
 
 // AddHttpPort adds a port to the HTTP tracing filter
@@ -718,5 +942,21 @@ func (m *Manager) AttachSSL(libPath string) error {
 	m.links = append(m.links, sslWrite)
 
 	// Note: SSL_read hooks would be attached similarly
+	return nil
+}
+
+// AttachMalloc attaches uprobes to the specified libc library path
+func (m *Manager) AttachMalloc(libPath string) error {
+	// malloc
+	up, err := link.OpenExecutable(libPath)
+	if err != nil {
+		return err
+	}
+
+	mallocProbe, err := up.Uprobe("malloc", m.mallocObjs.ProbeMalloc, nil)
+	if err != nil {
+		return fmt.Errorf("attaching uprobe/malloc: %w", err)
+	}
+	m.links = append(m.links, mallocProbe)
 	return nil
 }
