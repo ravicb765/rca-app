@@ -1,0 +1,33 @@
+{
+    "sdk_configs": {
+        "go": {
+            "generatorName": "go",
+            "output": "sdk/go",
+            "additionalProperties": {
+                "packageName": "rcasdk",
+                "enumClassPrefix": true
+            }
+        },
+        "python": {
+            "generatorName": "python",
+            "output": "sdk/python",
+            "additionalProperties": {
+                "packageName": "rcasdk",
+                "projectName": "rca-app-sdk"
+            }
+        },
+        "typescript": {
+            "generatorName": "typescript-axios",
+            "output": "sdk/typescript",
+            "additionalProperties": {
+                "npmName": "@rca-app/sdk",
+                "supportsES6": true
+            }
+        }
+    },
+    "swagger_ui": {
+        "docker_image": "swaggerapi/swagger-ui",
+        "port": 8081,
+        "spec_path": "/docs/api/openapi.yaml"
+    }
+}

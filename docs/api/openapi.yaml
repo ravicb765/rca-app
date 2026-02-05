@@ -1,0 +1,260 @@
+openapi: 3.0.3
+info:
+  title: RCA-App REST API
+  description: |
+    Comprehensive API for the RCA-App Observability Platform. 
+    Provides endpoints for service mapping, metrics query, log management, AI diagnostics, and alerting.
+  version: 1.0.0
+  contact:
+    name: RCA-App Support
+    email: support@rca-app.io
+
+servers:
+  - url: http://localhost:8080
+    description: Local Development Server
+  - url: https://api.rca-app.io
+    description: Production Server
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    OidcAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://auth.rca-app.io/.well-known/openid-configuration
+
+  schemas:
+    ServiceMap:
+      type: object
+      properties:
+        applications:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Application'
+        dependencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Dependency'
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        instances:
+          type: integer
+        health_score:
+          type: number
+          format: float
+
+    Dependency:
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        protocol:
+          type: string
+        latency_ms:
+          type: number
+
+    SLO:
+      type: object
+      required:
+        - name
+        - target
+        - window
+      properties:
+        name:
+          type: string
+          example: "API Availability"
+        application:
+          type: string
+          example: "checkout-service"
+        type:
+          type: string
+          enum: [availability, latency, error_rate]
+        target:
+          type: number
+          format: float
+          example: 99.9
+        window:
+          type: string
+          example: "30d"
+        indicator:
+          type: object
+          properties:
+            success:
+              type: string
+            total:
+              type: string
+
+    AlertConfig:
+      type: object
+      required:
+        - provider
+        - config
+      properties:
+        provider:
+          type: string
+          enum: [slack, pagerduty, email, webhook, jira, teams, opsgenie]
+        config:
+          type: object
+          additionalProperties: true
+
+    CostData:
+      type: object
+      required:
+        - service
+        - cost
+      properties:
+        service:
+          type: string
+          example: "ad-service"
+        cost:
+          type: number
+          format: float
+          example: 45.50
+        currency:
+          type: string
+          default: "USD"
+        period:
+          type: string
+          example: "2024-02"
+
+    AnalysisResult:
+      type: object
+      properties:
+        is_anomaly:
+          type: boolean
+        root_cause:
+          type: string
+        confidence:
+          type: number
+        reasoning:
+          type: string
+        remediation:
+          type: array
+          items:
+            type: string
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /api/v1/servicemap:
+    get:
+      summary: Get real-time service map
+      responses:
+        '200':
+          description: Service map data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceMap'
+
+  /api/v1/slos:
+    get:
+      summary: List all SLOs and their current status
+      responses:
+        '200':
+          description: List of SLOs
+    post:
+      summary: Create a new SLO
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SLO'
+      responses:
+        '201':
+          description: SLO created
+
+  /api/v1/analyze:
+    post:
+      summary: Trigger AI root cause analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                application_id:
+                  type: string
+                start_time:
+                  type: string
+                  format: date-time
+                end_time:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResult'
+
+  /api/v1/metrics/query:
+    get:
+      summary: Instant Prometheus query
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: time
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Query results
+
+  /api/v1/costs:
+    get:
+      summary: Get cloud cost data
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cost distribution
+    post:
+      summary: Record cost data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CostData'
+      responses:
+        '201':
+          description: Cost recorded
