@@ -6,18 +6,34 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ravicb765/rca-app/server/inspections"
+	"github.com/ravicb765/rca-app/server/servicemap"
+	"github.com/ravicb765/rca-app/server/slo"
 )
 
-func TestServiceMap(t *testing.T) {
+func setupTestRouter() (*gin.Engine, *serviceStore, *MetadataCache, *AgentStore, *servicemap.ServiceMapBuilder) {
 	store := &serviceStore{}
-	r := newRouter(store)
+	agentStore := NewAgentStore()
+	metaCache := NewMetadataCache()
+	builder := servicemap.NewServiceMapBuilder(metaCache)
+	inspectionEngine := inspections.NewInspectionEngine(nil)
+	sloTracker := slo.NewSLOTracker(nil) // nil client is safe as long as we don't hit /slos
+
+	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, metaCache)
+	return r, store, metaCache, agentStore, builder
+}
+
+func TestServiceMap(t *testing.T) {
+	r, _, _, _, _ := setupTestRouter()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/servicemap", nil)
 	w := httptest.NewRecorder()
@@ -29,8 +45,7 @@ func TestServiceMap(t *testing.T) {
 }
 
 func TestApplications(t *testing.T) {
-	store := &serviceStore{}
-	r := newRouter(store)
+	r, _, _, _, _ := setupTestRouter()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
 	w := httptest.NewRecorder()
@@ -50,7 +65,13 @@ func TestClusterAgentIntegration(t *testing.T) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
+	// We need to construct dependencies manually here to pass the store to fetchOnce
 	store := &serviceStore{}
+	agentStore := NewAgentStore()
+	metaCache := NewMetadataCache()
+	builder := servicemap.NewServiceMapBuilder(metaCache)
+	inspectionEngine := inspections.NewInspectionEngine(nil)
+	sloTracker := slo.NewSLOTracker(nil)
 
 	// call fetchOnce directly so tests can supply local counters
 	fetchTotal := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fetch_total"})
@@ -61,7 +82,7 @@ func TestClusterAgentIntegration(t *testing.T) {
 		t.Fatalf("fetchOnce failed: %v", err)
 	}
 
-	r := newRouter(store)
+	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, metaCache)
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
@@ -80,8 +101,7 @@ func TestClusterAgentIntegration(t *testing.T) {
 }
 
 func TestAgentEndpoints(t *testing.T) {
-	store := &serviceStore{}
-	r := newRouter(store)
+	r, _, _, _, _ := setupTestRouter()
 
 	// heartbeat
 	payload := []byte(`{"hostname":"test","programs":[],"maps":{},"time":"now"}`)
@@ -114,7 +134,7 @@ func TestAgentEndpoints(t *testing.T) {
 	}
 
 	// perf/map style payload with JSON-encoded connection (hex)
-	connBody, _ := json.Marshal([]map[string]any{{"source_app":"p1","dest_app":"p2","protocol":"tcp"}})
+	connBody, _ := json.Marshal([]map[string]any{{"source_app": "p1", "dest_app": "p2", "protocol": "tcp"}})
 	hexBody := "0x" + strings.ToLower(hex.EncodeToString(connBody))
 	payload = []byte(fmt.Sprintf(`{"map":"myperf","data":"%s"}`, hexBody))
 	req = httptest.NewRequest("POST", "/api/v1/agent/event", bytes.NewReader(payload))
@@ -229,4 +249,31 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("expected servicemap in response")
 	}
 
+}
+
+func TestMetadataRegistration(t *testing.T) {
+	r, _, metaCache, _, _ := setupTestRouter()
+
+	// Payload
+	pods := []PodInfo{
+		{Name: "frontend", Namespace: "default", IP: "10.0.0.1", Node: "node-1"},
+		{Name: "backend", Namespace: "default", IP: "10.0.0.2", Node: "node-2"},
+	}
+	body, _ := json.Marshal(map[string]interface{}{"pods": pods})
+
+	// Request
+	req := httptest.NewRequest("POST", "/api/v1/metadata", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	// Verify Response
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// Verify Cache Update
+	if p := metaCache.LookupPod("10.0.0.1"); p == nil || p.PodName != "frontend" {
+		t.Error("expected pod 10.0.0.1 to be registered as frontend")
+	}
 }

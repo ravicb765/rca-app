@@ -1,6 +1,9 @@
 package servicemap
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestBuildServiceMap(t *testing.T) {
 	conns := []Connection{
@@ -85,5 +88,48 @@ func TestDetectCycles(t *testing.T) {
 
 	if len(cycles[0]) != 3 {
 		t.Errorf("expected cycle length 3, got %d: %v", len(cycles[0]), cycles[0])
+	}
+}
+
+func TestServiceMapBuilder_Prune(t *testing.T) {
+	mockCache := &MockMetadataCache{pods: map[string]*Instance{}}
+	builder := NewServiceMapBuilder(mockCache)
+
+	// Add a connection
+	builder.Update([]TelemetryEvent{
+		{SrcIP: "1.1.1.1", DstIP: "2.2.2.2", Protocol: "http"},
+	})
+
+	// Verify it exists
+	sm := builder.GetServiceMap()
+	if len(sm.Connections) != 1 {
+		t.Fatal("expected 1 connection before prune")
+	}
+
+	// Wait for time to pass to ensure LastSeen is older than the prune cutoff
+	time.Sleep(10 * time.Millisecond)
+
+	// Prune with a very short TTL (1ms), which should remove the connection added >10ms ago
+	builder.Prune(1 * time.Millisecond)
+
+	sm = builder.GetServiceMap()
+	if len(sm.Connections) != 0 {
+		t.Fatalf("expected 0 connections after prune, got %d", len(sm.Connections))
+	}
+}
+
+func TestServiceMapBuilder_CircularDependencies(t *testing.T) {
+	mockCache := &MockMetadataCache{pods: map[string]*Instance{}}
+	builder := NewServiceMapBuilder(mockCache)
+
+	// Create a cycle: A -> B -> A
+	builder.Update([]TelemetryEvent{
+		{SrcIP: "10.0.0.1", DstIP: "10.0.0.2", DstPort: 80, Protocol: "http"}, // A -> B
+		{SrcIP: "10.0.0.2", DstIP: "10.0.0.1", DstPort: 80, Protocol: "http"}, // B -> A
+	})
+
+	sm := builder.GetServiceMap()
+	if len(sm.CircularDependencies) == 0 {
+		t.Error("expected ServiceMapBuilder to detect circular dependencies")
 	}
 }

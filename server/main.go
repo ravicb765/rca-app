@@ -70,6 +70,21 @@ func (m *MetadataCache) UpdatePods(pods []PodInfo) {
 	}
 }
 
+func (m *MetadataCache) RegisterPods(pods []PodInfo) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range pods {
+		if p.IP != "" {
+			m.pods[p.IP] = &servicemap.Instance{
+				ID:        p.Namespace + "/" + p.Name,
+				PodName:   p.Name,
+				Namespace: p.Namespace,
+				NodeName:  p.Node,
+			}
+		}
+	}
+}
+
 // decodePerfRawToEvents tries to interpret raw bytes as one of: JSON array/object, ascii key=value, or a binary conn_event
 func decodePerfRawToEvents(b []byte) ([]servicemap.TelemetryEvent, error) {
 	// Try JSON
@@ -202,12 +217,12 @@ func (s *AgentStore) ListActive() []AgentInfo {
 }
 
 // newRouter creates the HTTP handlers. Exported for testing.
-func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.ServiceMapBuilder, inspectionEngine *inspections.InspectionEngine, sloTracker *slo.SLOTracker) *gin.Engine {
+func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.ServiceMapBuilder, inspectionEngine *inspections.InspectionEngine, sloTracker *slo.SLOTracker, metaCache *MetadataCache) *gin.Engine {
 	r := gin.Default()
 
 	r.GET("/api/v1/servicemap", func(c *gin.Context) {
 		// Get current graph snapshot (Update with nil events)
-		sm := builder.Update(nil)
+		sm := builder.GetServiceMap()
 
 		// retain backward compatible services list (cluster-agent or static)
 		svc := store.list()
@@ -257,6 +272,18 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 
 	r.GET("/api/v1/agents", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"agents": agentStore.ListActive()})
+	})
+
+	r.POST("/api/v1/metadata", func(c *gin.Context) {
+		var payload struct {
+			Pods []PodInfo `json:"pods"`
+		}
+		if err := c.BindJSON(&payload); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		metaCache.RegisterPods(payload.Pods)
+		c.JSON(http.StatusOK, gin.H{"registered": len(payload.Pods)})
 	})
 
 	// Agent heartbeat endpoint used by node-agent
@@ -504,7 +531,7 @@ func main() {
 	})
 	reg.MustRegister(fetchTotal, fetchSuccess, fetchErrors)
 
-	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker)
+	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, metaCache)
 	// add server metrics endpoint bound to registry
 	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
 
@@ -525,7 +552,8 @@ func main() {
 				return
 			case <-ticker.C:
 				// Get latest snapshot and run inspections
-				sm := builder.Update(nil)
+				builder.Prune(5 * time.Minute)
+				sm := builder.GetServiceMap()
 				inspectionEngine.Run(sm)
 			}
 		}

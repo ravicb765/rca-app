@@ -9,22 +9,50 @@ import (
 
 // classifyAppName returns a simple service type based on common name hints
 func classifyAppName(name string) string {
+	return classifyService(name, 0, "")
+}
+
+func classifyService(name string, port uint16, protocol string) string {
 	n := strings.ToLower(name)
-	switch {
-	case strings.Contains(n, "postgres") || strings.Contains(n, "postgresql"):
+	p := strings.ToLower(protocol)
+
+	// Prioritize name-based classification (metadata)
+	if strings.Contains(n, "postgres") || strings.Contains(n, "postgresql") {
 		return "postgres"
-	case strings.Contains(n, "mysql"):
+	}
+	if strings.Contains(n, "mysql") {
 		return "mysql"
-	case strings.Contains(n, "redis"):
+	}
+	if strings.Contains(n, "redis") {
 		return "redis"
-	case strings.Contains(n, "mongo"):
+	}
+	if strings.Contains(n, "mongo") {
 		return "mongodb"
-	case strings.Contains(n, "kafka"):
+	}
+	if strings.Contains(n, "kafka") {
 		return "kafka"
-	case strings.Contains(n, "rabbit"):
+	}
+	if strings.Contains(n, "rabbit") {
 		return "rabbitmq"
-	case strings.Contains(n, "api") || strings.Contains(n, "http") || strings.Contains(n, "web") || strings.Contains(n, "frontend") || strings.Contains(n, "backend"):
+	}
+
+	switch {
+	case port == 5432:
+		return "postgres"
+	case port == 3306:
+		return "mysql"
+	case port == 6379:
+		return "redis"
+	case port == 27017:
+		return "mongodb"
+	case port == 9092:
+		return "kafka"
+	case port == 5672:
+		return "rabbitmq"
+	case port == 80 || port == 443 || port == 8080 || strings.Contains(p, "http") || strings.Contains(n, "api") || strings.Contains(n, "web") || strings.Contains(n, "frontend") || strings.Contains(n, "backend"):
 		return "http"
+	case strings.Contains(p, "grpc"):
+		return "grpc"
 	default:
 		return ""
 	}
@@ -62,26 +90,28 @@ type Instance struct {
 
 // Connection represents an observed edge between two applications
 type Connection struct {
-	SourceApp         string  `json:"source_app"`
-	DestApp           string  `json:"dest_app"`
-	Protocol          string  `json:"protocol,omitempty"`
-	RequestRate       float64 `json:"request_rate,omitempty"`
-	ErrorRate         float64 `json:"error_rate,omitempty"`
-	Latency           float64 `json:"latency,omitempty"`
-	MemoryUsage       float64 `json:"memory_usage,omitempty"`
-	CPUUsage          float64 `json:"cpu_usage,omitempty"`
-	DiskUsage         float64 `json:"disk_usage,omitempty"`
-	IOLoad            float64 `json:"io_load,omitempty"`
-	ActiveConnections float64 `json:"active_connections,omitempty"`
-	PacketLoss        float64 `json:"packet_loss,omitempty"`
-	Http5xxRate       float64 `json:"http_5xx_rate,omitempty"`
-	IOWait            float64 `json:"io_wait,omitempty"`
-	SwapUsage         float64 `json:"swap_usage,omitempty"`
-	RestartCount      float64 `json:"restart_count,omitempty"`
-	CPUThrottling     float64 `json:"cpu_throttling,omitempty"`
-	GoroutineCount    float64 `json:"goroutine_count,omitempty"`
-	OpenFDs           float64 `json:"open_fds,omitempty"`
-	ThreadCount       float64 `json:"thread_count,omitempty"`
+	SourceApp         string    `json:"source_app"`
+	DestApp           string    `json:"dest_app"`
+	DestPort          uint16    `json:"dest_port,omitempty"`
+	Protocol          string    `json:"protocol,omitempty"`
+	RequestRate       float64   `json:"request_rate,omitempty"`
+	ErrorRate         float64   `json:"error_rate,omitempty"`
+	Latency           float64   `json:"latency,omitempty"`
+	MemoryUsage       float64   `json:"memory_usage,omitempty"`
+	CPUUsage          float64   `json:"cpu_usage,omitempty"`
+	DiskUsage         float64   `json:"disk_usage,omitempty"`
+	IOLoad            float64   `json:"io_load,omitempty"`
+	ActiveConnections float64   `json:"active_connections,omitempty"`
+	PacketLoss        float64   `json:"packet_loss,omitempty"`
+	Http5xxRate       float64   `json:"http_5xx_rate,omitempty"`
+	IOWait            float64   `json:"io_wait,omitempty"`
+	SwapUsage         float64   `json:"swap_usage,omitempty"`
+	RestartCount      float64   `json:"restart_count,omitempty"`
+	CPUThrottling     float64   `json:"cpu_throttling,omitempty"`
+	GoroutineCount    float64   `json:"goroutine_count,omitempty"`
+	OpenFDs           float64   `json:"open_fds,omitempty"`
+	ThreadCount       float64   `json:"thread_count,omitempty"`
+	LastSeen          time.Time `json:"last_seen,omitempty"`
 }
 
 // TelemetryEvent represents a raw network event received from an agent
@@ -213,15 +243,32 @@ func NewServiceMapBuilder(metadataCache K8sMetadataCache) *ServiceMapBuilder {
 }
 
 // Update processes a batch of observed connections and returns the current graph snapshot.
-func (b *ServiceMapBuilder) Update(events []TelemetryEvent) *ServiceMap {
+func (b *ServiceMapBuilder) Update(events []TelemetryEvent) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	for _, event := range events {
 		b.processEvent(event)
 	}
+}
 
+// GetServiceMap returns a snapshot of the current service graph.
+func (b *ServiceMapBuilder) GetServiceMap() *ServiceMap {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	return b.buildGraph()
+}
+
+// Prune removes connections that haven't been seen in the last ttl duration.
+func (b *ServiceMapBuilder) Prune(ttl time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	cutoff := time.Now().Add(-ttl)
+	for k, conn := range b.connections {
+		if conn.LastSeen.Before(cutoff) {
+			delete(b.connections, k)
+		}
+	}
 }
 
 func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
@@ -249,8 +296,8 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 	}
 
 	// 1. Update Applications
-	b.ensureApp(srcApp)
-	b.ensureApp(dstApp)
+	b.ensureApp(srcApp, 0, "")
+	b.ensureApp(dstApp, event.DstPort, event.Protocol)
 
 	// 2. Update Connection State
 	key := fmt.Sprintf("%s->%s", srcApp, dstApp)
@@ -277,10 +324,12 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 		if existing.Protocol == "" && event.Protocol != "" {
 			existing.Protocol = event.Protocol
 		}
+		existing.LastSeen = time.Now()
 	} else {
 		b.connections[key] = &Connection{
 			SourceApp:         srcApp,
 			DestApp:           dstApp,
+			DestPort:          event.DstPort,
 			Protocol:          event.Protocol,
 			RequestRate:       event.RequestRate,
 			ErrorRate:         event.ErrorRate,
@@ -299,6 +348,7 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 			GoroutineCount:    event.GoroutineCount,
 			OpenFDs:           event.OpenFDs,
 			ThreadCount:       event.ThreadCount,
+			LastSeen:          time.Now(),
 		}
 	}
 
@@ -314,13 +364,15 @@ func (b *ServiceMapBuilder) processEvent(event TelemetryEvent) {
 	}
 }
 
-func (b *ServiceMapBuilder) ensureApp(id string) {
+func (b *ServiceMapBuilder) ensureApp(id string, port uint16, protocol string) {
 	if _, ok := b.applications[id]; !ok {
 		b.applications[id] = &Application{
 			ID:   id,
 			Name: id,
-			Type: classifyAppName(id),
+			Type: classifyService(id, port, protocol),
 		}
+	} else if b.applications[id].Type == "" {
+		b.applications[id].Type = classifyService(id, port, protocol)
 	}
 }
 
