@@ -23,3 +23,4 @@ clean:
 tidy:
 	cd server && go mod tidy
 	cd node-agent && go mod tidy
+	cd ml-service && if [ -f go.mod ]; then go mod tidy; fi

@@ -113,6 +113,7 @@ class RCAEngine:
             "is_anomaly": is_anomaly,
             "root_cause": "normal_operation",
             "confidence": 1.0 if not is_anomaly else 0.0,
+            "reasoning": "Application is operating within normal parameters.",
             "remediation": []
         }
 
@@ -125,18 +126,45 @@ class RCAEngine:
             probs = self.classifier.model.predict_proba([feature_vector])[0]
             confidence = max(probs)
             result["confidence"] = float(confidence)
+            result["reasoning"] = self._generate_reasoning(cause, feature_vector)
             result["remediation"] = self._get_remediation(cause)
 
         return result
 
+    def _generate_reasoning(self, cause, metrics):
+        cpu, mem, latency, error_rate = metrics
+        reasons = {
+            "resource_exhaustion": f"High resource utilization detected (CPU: {cpu:.1f}%, Mem: {mem:.1f}%). The application is likely throttled or nearing its memory limit, leading to performance degradation.",
+            "database_slowdown": f"Significant increase in latency ({latency:.1f}ms) without a corresponding spike in CPU or memory. This pattern is characteristic of database lock contention or slow queries.",
+            "network_issue": f"Elevated error rate ({error_rate:.1f}%) detected. This suggests connectivity issues with upstream dependencies or network saturation.",
+            "unknown": "Detected anomalous behavior that does not match known failure patterns perfectly. Investigating resource and error metrics is recommended."
+        }
+        return reasons.get(cause, "Anomalous patterns detected in system telemetry.")
+
     def _get_remediation(self, cause):
         remediations = {
-            "resource_exhaustion": ["Scale up replicas", "Check for memory leaks", "Optimize CPU intensive tasks"],
-            "database_slowdown": ["Check database locks", "Analyze slow queries", "Check connection pool"],
-            "network_issue": ["Check upstream dependencies", "Verify network policies", "Check DNS resolution"],
-            "unknown": ["Check application logs", "Investigate recent deployments"]
+            "resource_exhaustion": [
+                "Increase CPU/Memory limits in Kubernetes manifest",
+                "Check for memory leaks using continuous profiling",
+                "Horizontal scale: Add more replicas to distribute load"
+            ],
+            "database_slowdown": [
+                "Check for long-running transactions in the database",
+                "Verify database connection pool saturation",
+                "Check for missing indexes on frequently queried tables"
+            ],
+            "network_issue": [
+                "Verify network policies are not blocking traffic",
+                "Check upstream service health via Service Map",
+                "Analyze recent network configuration changes"
+            ],
+            "unknown": [
+                "Review application logs for error patterns",
+                "Correlate with recent deployment events",
+                "Check cluster-wide event logs"
+            ]
         }
-        return remediations.get(cause, ["Investigate manually"])
+        return remediations.get(cause, ["Investigate manually using the Service Map and Logs"])
 
     def train(self, normal_data, incident_features, incident_labels):
         """
