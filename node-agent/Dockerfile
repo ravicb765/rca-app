@@ -1,33 +1,24 @@
-FROM golang:1.21-bullseye AS builder
+FROM golang:1.21-alpine AS builder
 
-# Install dependencies for eBPF compilation
-RUN apt-get update && apt-get install -y \
-    clang \
-    llvm \
-    libbpf-dev \
-    gcc \
-    make \
-    && rm -rf /var/lib/apt/lists/*
+# Install build dependencies for eBPF compilation
+RUN apk add --no-cache clang llvm make
 
 WORKDIR /app
-
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Compile the eBPF C program
+RUN make -C ebpf
 
-# Compile eBPF objects
-RUN cd ebpf && make
+# Build the Go binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o node-agent main.go
 
-# Build Go binary with ebpf tag
-RUN go build -tags ebpf -o node-agent .
-
-FROM debian:bullseye-slim
+FROM alpine:latest
 WORKDIR /app
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-
 COPY --from=builder /app/node-agent .
-# Copy compiled eBPF objects so the loader can find them at runtime
-COPY --from=builder /app/ebpf/*.o ./ebpf/
+
+# Copy the compiled eBPF object to the expected location
+COPY --from=builder /app/ebpf/network_tracer.o ./ebpf/network_tracer.o
 
 CMD ["./node-agent"]

@@ -5,7 +5,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -o server main.go
+# Build static binary with debug information stripped for smaller size
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server main.go
 
 FROM alpine:latest
 WORKDIR /app
