@@ -2,6 +2,36 @@
 
 RCA-App is a comprehensive observability platform designed to provide deep visibility into microservices, identify root causes of incidents using AI, and integrate seamlessly with developer portals.
 
+## 🎯 Use Cases
+
+### 1. Incident Response
+- **Automatic Detection**: Real-time identification of performance degradation and service failures.
+- **AI Root Cause Analysis**: Explains the root cause in plain English with high-confidence diagnostics.
+- **Remediation Steps**: Provides immediate, actionable steps to resolve identified issues.
+- **MTTR Reduction**: Significantly reduces Mean Time To Resolution by automating the investigation phase.
+
+### 2. Proactive Monitoring
+- **Early Warnings**: Anomaly detection identifies issues before they impact end-users.
+- **Trend-Based Alerting**: Predictive alerts based on historical telemetry patterns.
+- **Baseline Tracking**: Automatically learns and monitors "normal" system behavior.
+
+### 3. Cost Optimization
+- **Granular Attribution**: Track cloud infrastructure costs per microservice and namespace.
+- **Waste Identification**: Spot underutilized resources and orphaned deployments.
+- **Configuration Tuning**: Optimize Kubernetes deployment specs based on cost-to-performance data.
+
+### 4. Performance Engineering
+- **Production Profiling**: Low-overhead continuous profiling of live applications.
+- **Cold-Path Detection**: Identify slow or inefficient code paths without instrumenting source code.
+- **Deployment Comparison**: Compare performance characteristics across different versions.
+
+### 5. Compliance & Audit
+- **System Traceability**: Maintain a complete audit trail of system behavior and changes.
+- **SLO Compliance**: Real-time tracking of Service Level Objectives and error budgets.
+- **Automated Documentation**: Generate detailed root cause reports for post-mortems and audits.
+
+---
+
 ## 🏗 Architecture
 
 The platform consists of four main components:
