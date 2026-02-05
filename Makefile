@@ -6,16 +6,19 @@ build:
 	$(MAKE) -C server build
 	$(MAKE) -C node-agent build
 	$(MAKE) -C ml-service build
+	$(MAKE) -C backstage-portal build
 
 docker-build:
 	$(MAKE) -C server docker-build
 	$(MAKE) -C node-agent docker-build
 	$(MAKE) -C ml-service docker-build
+	$(MAKE) -C backstage-portal docker-build
 
 clean:
 	$(MAKE) -C server clean
 	$(MAKE) -C node-agent clean
 	$(MAKE) -C ml-service clean
+	$(MAKE) -C backstage-portal clean
 
 tidy:
 	cd server && go mod tidy
