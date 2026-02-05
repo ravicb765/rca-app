@@ -1,8 +1,12 @@
 package cost
 
 import (
+	"encoding/json"
+	"log"
 	"sync"
 	"time"
+	
+	"github.com/ravicb765/rca-app/server/database"
 )
 
 // CostProvider represents the cloud provider
@@ -44,6 +48,7 @@ type CostPoint struct {
 // CostTracker manages cost tracking
 type CostTracker struct {
 	costs      map[string][]CostData
+	repo       *database.CostRepository
 	mu         sync.RWMutex
 	maxHistory int
 }
@@ -54,6 +59,13 @@ func NewCostTracker() *CostTracker {
 		costs:      make(map[string][]CostData),
 		maxHistory: 365, // Keep up to 1 year of daily data
 	}
+}
+
+// SetDatabase sets the database repository for persistence
+func (ct *CostTracker) SetDatabase(db *database.DB) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	ct.repo = database.NewCostRepository(db)
 }
 
 // TrackCost records cost data for a service
@@ -70,6 +82,23 @@ func (ct *CostTracker) TrackCost(data CostData) {
 	// Prune old data
 	if len(ct.costs[data.Service]) > ct.maxHistory {
 		ct.costs[data.Service] = ct.costs[data.Service][len(ct.costs[data.Service])-ct.maxHistory:]
+	}
+	
+	// Persist to database if available
+	if ct.repo != nil {
+		tagsJSON, _ := json.Marshal(data.Tags)
+		record := database.CostRecord{
+			Service:   data.Service,
+			Cost:      data.Cost,
+			Currency:  data.Currency,
+			Provider:  string(data.Provider),
+			Period:    data.Period,
+			Timestamp: data.Timestamp,
+			Tags:      string(tagsJSON),
+		}
+		if err := ct.repo.Save(record); err != nil {
+			log.Printf("Failed to persist cost data: %v", err)
+		}
 	}
 }
 

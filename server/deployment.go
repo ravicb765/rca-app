@@ -12,6 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	
+	"github.com/ravicb765/rca-app/server/database"
 )
 
 // DeploymentStatus represents the status of a deployment
@@ -41,6 +43,7 @@ type DeploymentEvent struct {
 type DeploymentTracker struct {
 	clientset *kubernetes.Clientset
 	history   map[string][]DeploymentEvent
+	repo      *database.DeploymentRepository
 	mu        sync.RWMutex
 	stopCh    chan struct{}
 	maxHistory int
@@ -64,6 +67,13 @@ func NewDeploymentTracker() (*DeploymentTracker, error) {
 		stopCh:     make(chan struct{}),
 		maxHistory: 100,
 	}, nil
+}
+
+// SetDatabase sets the database repository for persistence
+func (dt *DeploymentTracker) SetDatabase(db *database.DB) {
+	dt.mu.Lock()
+	defer dt.mu.Unlock()
+	dt.repo = database.NewDeploymentRepository(db)
 }
 
 // Start begins watching deployments
@@ -158,6 +168,25 @@ func (dt *DeploymentTracker) addEvent(event DeploymentEvent) {
 	// Prune history if it exceeds max
 	if len(dt.history[key]) > dt.maxHistory {
 		dt.history[key] = dt.history[key][len(dt.history[key])-dt.maxHistory:]
+	}
+	
+	// Persist to database if available
+	if dt.repo != nil {
+		record := database.DeploymentRecord{
+			Name:            event.Name,
+			Namespace:       event.Namespace,
+			Status:          string(event.Status),
+			Replicas:        event.Replicas,
+			ReadyReplicas:   event.ReadyReplicas,
+			UpdatedReplicas: event.UpdatedReplicas,
+			Version:         event.Version,
+			Image:           event.Image,
+			Message:         event.Message,
+			Timestamp:       event.Timestamp,
+		}
+		if err := dt.repo.Save(record); err != nil {
+			log.Printf("Failed to persist deployment event: %v", err)
+		}
 	}
 }
 

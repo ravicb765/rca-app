@@ -9,6 +9,8 @@ import (
 	"net/smtp"
 	"sync"
 	"time"
+	
+	"github.com/ravicb765/rca-app/server/database"
 )
 
 // AlertSeverity represents the severity of an alert
@@ -48,6 +50,7 @@ type AlertConfig struct {
 type AlertManager struct {
 	providers map[string]AlertProvider
 	configs   map[string]AlertConfig
+	repo      *database.AlertConfigRepository
 	mu        sync.RWMutex
 	client    *http.Client
 }
@@ -59,6 +62,35 @@ func NewAlertManager() *AlertManager {
 		configs:   make(map[string]AlertConfig),
 		client:    &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// SetDatabase sets the database repository for persistence
+func (am *AlertManager) SetDatabase(db *database.DB) error {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	
+	am.repo = database.NewAlertConfigRepository(db)
+	
+	// Load existing configs from database
+	records, err := am.repo.List()
+	if err != nil {
+		return fmt.Errorf("failed to load alert configs from database: %w", err)
+	}
+	
+	for _, record := range records {
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(record.Config), &config); err != nil {
+			continue // Skip invalid records
+		}
+		
+		am.configs[record.Provider] = AlertConfig{
+			Provider: record.Provider,
+			Enabled:  record.Enabled,
+			Config:   config,
+		}
+	}
+	
+	return nil
 }
 
 // RegisterProvider registers an alert provider
@@ -78,6 +110,14 @@ func (am *AlertManager) ConfigureProvider(config AlertConfig) error {
 	}
 
 	am.configs[config.Provider] = config
+	
+	// Persist to database if available
+	if am.repo != nil {
+		if err := am.repo.Save(config.Provider, config.Enabled, config.Config); err != nil {
+			return fmt.Errorf("failed to persist alert config: %w", err)
+		}
+	}
+	
 	return nil
 }
 
@@ -131,6 +171,14 @@ func (am *AlertManager) RemoveProvider(name string) error {
 	}
 
 	delete(am.configs, name)
+	
+	// Remove from database if available
+	if am.repo != nil {
+		if err := am.repo.Delete(name); err != nil {
+			return fmt.Errorf("failed to delete alert config from database: %w", err)
+		}
+	}
+	
 	return nil
 }
 

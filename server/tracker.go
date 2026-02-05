@@ -2,12 +2,14 @@ package slo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/ravicb765/rca-app/server/database"
 )
 
 // SLOType represents the type of SLO
@@ -57,6 +59,7 @@ type SLOTracker struct {
 	slos         map[string]*SLO
 	statusCache  map[string]*SLOStatus
 	metricsAPI   MetricsClient
+	repo         *database.SLORepository
 	mu           sync.RWMutex
 	cacheTTL     time.Duration
 }
@@ -69,6 +72,38 @@ func NewSLOTracker(metricsAPI MetricsClient) *SLOTracker {
 		metricsAPI:  metricsAPI,
 		cacheTTL:    30 * time.Second,
 	}
+}
+
+// SetDatabase sets the database repository for persistence
+func (t *SLOTracker) SetDatabase(db *database.DB) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	t.repo = database.NewSLORepository(db)
+	
+	// Load existing SLOs from database
+	records, err := t.repo.List()
+	if err != nil {
+		return fmt.Errorf("failed to load SLOs from database: %w", err)
+	}
+	
+	for _, record := range records {
+		var indicator SLOIndicator
+		if err := json.Unmarshal([]byte(record.IndicatorQuery), &indicator); err != nil {
+			continue // Skip invalid records
+		}
+		
+		slo := &SLO{
+			Name:      record.Name,
+			Type:      SLOType(record.Type),
+			Target:    record.Target,
+			Window:    record.Window,
+			Indicator: indicator,
+		}
+		t.slos[slo.Name] = slo
+	}
+	
+	return nil
 }
 
 // AddSLO registers a new SLO
@@ -84,6 +119,22 @@ func (t *SLOTracker) AddSLO(slo *SLO) error {
 	}
 
 	t.slos[slo.Name] = slo
+	
+	// Persist to database if available
+	if t.repo != nil {
+		indicatorJSON, _ := json.Marshal(slo.Indicator)
+		record := database.SLORecord{
+			Name:           slo.Name,
+			Type:           string(slo.Type),
+			Target:         slo.Target,
+			Window:         slo.Window,
+			IndicatorQuery: string(indicatorJSON),
+		}
+		if err := t.repo.Save(record); err != nil {
+			return fmt.Errorf("failed to persist SLO: %w", err)
+		}
+	}
+	
 	return nil
 }
 
@@ -98,6 +149,14 @@ func (t *SLOTracker) RemoveSLO(name string) error {
 
 	delete(t.slos, name)
 	delete(t.statusCache, name)
+	
+	// Remove from database if available
+	if t.repo != nil {
+		if err := t.repo.Delete(name); err != nil {
+			return fmt.Errorf("failed to delete SLO from database: %w", err)
+		}
+	}
+	
 	return nil
 }
 

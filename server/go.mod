@@ -12,7 +12,12 @@ require (
 	go.opentelemetry.io/otel v1.16.0
 	go.opentelemetry.io/otel/sdk v1.16.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.16.0
-
+	github.com/mattn/go-sqlite3 v1.14.18
+	k8s.io/api v0.28.0
+	k8s.io/apimachinery v0.28.0
+	k8s.io/client-go v0.28.0
+	github.com/prometheus/client_golang/api v1.16.0
+	github.com/xeipuuv/gojsonschema v1.2.0
 )
 
 require (
