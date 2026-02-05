@@ -68,103 +68,102 @@ class RCAEngine:
         self.classifier = IncidentClassifier()
         
         # Initialize with dummy data for demonstration
-        # In production, this would load from a database or model file
         self._train_dummy_models()
 
     def _train_dummy_models(self):
-        # Dummy normal data for Anomaly Detection (CPU, Mem, Latency, ErrorRate)
-        # Normal: CPU 20-60%, Mem 40-70%, Latency 10-50ms, Error 0-0.1%
+        # Dummy normal data for Anomaly Detection (CPU, Mem, Latency, ErrorRate, RequestRate)
         rng = np.random.RandomState(42)
-        X_normal = rng.rand(100, 4) * [40, 30, 40, 0.1] + [20, 40, 10, 0]
+        X_normal = rng.rand(100, 5) * [40, 30, 40, 0.1, 50] + [20, 40, 10, 0, 10]
         self.anomaly_detector.train(X_normal.tolist())
 
         # Dummy incident data for Classifier
-        # Features: [CPU, Mem, Latency, ErrorRate]
+        # Features: [CPU, Mem, Latency, ErrorRate, RequestRate]
         X_incidents = [
-            [95, 80, 200, 0.5], # High CPU/Mem -> Resource Exhaustion
-            [20, 40, 1000, 0.1], # High Latency -> Database Slowdown
-            [30, 40, 50, 5.0],   # High Error -> Network/Dependency
+            [30, 40, 500, 0.1, 100], # Database Slowdown
+            [30, 95, 40, 0.05, 80],  # Memory Leak
+            [30, 40, 50, 5.0, 70],   # Network Issue
+            [90, 40, 200, 0.05, 500], # High Traffic
+            [30, 40, 50, 10.0, 50],  # Dependency Failure
         ]
-        y_incidents = ["resource_exhaustion", "database_slowdown", "network_issue"]
+        y_incidents = ["database_slowdown", "memory_leak", "network_issue", "high_traffic", "dependency_failure"]
         
-        # Duplicate to have enough samples for training
-        X_train = np.array(X_incidents * 10)
-        y_train = y_incidents * 10
+        X_train = np.array(X_incidents * 20)
+        y_train = y_incidents * 20
         self.classifier.train(X_train, y_train)
 
     def analyze(self, incident_data):
-        """
-        Analyze current metrics to find anomalies and root causes.
-        incident_data: dict containing 'metrics' key
-        """
         metrics_dict = incident_data.get('metrics', {})
-        # Extract feature vector in correct order: CPU, Mem, Latency, ErrorRate
         feature_vector = [
             float(metrics_dict.get('cpu', 0)),
             float(metrics_dict.get('memory', 0)),
             float(metrics_dict.get('latency', 0)),
-            float(metrics_dict.get('error_rate', 0))
+            float(metrics_dict.get('error_rate', 0)),
+            float(metrics_dict.get('request_rate', 0))
         ]
 
-        # 1. Detect Anomaly
         is_anomaly = self.anomaly_detector.detect(feature_vector) == -1
 
-        result = {
-            "is_anomaly": is_anomaly,
-            "root_cause": "normal_operation",
-            "confidence": 1.0 if not is_anomaly else 0.0,
-            "reasoning": "Application is operating within normal parameters.",
-            "remediation": []
-        }
+        if not is_anomaly:
+            return {
+                "is_anomaly": False,
+                "root_cause": "normal_operation",
+                "confidence": 1.0,
+                "reasoning": "Application is operating within normal parameters.",
+                "remediation": []
+            }
 
-        if is_anomaly:
-            # 2. Classify Incident
-            cause = self.classifier.predict(feature_vector)
-            result["root_cause"] = cause
-            
-            # Simple confidence heuristic
-            probs = self.classifier.model.predict_proba([feature_vector])[0]
-            confidence = max(probs)
-            result["confidence"] = float(confidence)
-            result["reasoning"] = self._generate_reasoning(cause, feature_vector)
-            result["remediation"] = self._get_remediation(cause)
-
+        # 2. Classify Incident
+        cause = self.classifier.predict(feature_vector)
+        
+        # 3. LLM-based RCA (Simulated/Stub)
+        # In production, this would call GPT-4 or a local LLM via LangChain/OpenAI API
+        result = self._call_llm_analyzer(cause, feature_vector)
+        
+        # Add classification confidence
+        probs = self.classifier.model.predict_proba([feature_vector])[0]
+        result["confidence"] = float(max(probs))
+        
         return result
 
-    def _generate_reasoning(self, cause, metrics):
-        cpu, mem, latency, error_rate = metrics
+    def _call_llm_analyzer(self, cause, metrics):
+        """Stub for LLM-based Root Cause Analysis"""
+        cpu, mem, lat, err, req = metrics
+        
+        # This simulates the output of an LLM processing the metrics and classification
         reasons = {
-            "resource_exhaustion": f"High resource utilization detected (CPU: {cpu:.1f}%, Mem: {mem:.1f}%). The application is likely throttled or nearing its memory limit, leading to performance degradation.",
-            "database_slowdown": f"Significant increase in latency ({latency:.1f}ms) without a corresponding spike in CPU or memory. This pattern is characteristic of database lock contention or slow queries.",
-            "network_issue": f"Elevated error rate ({error_rate:.1f}%) detected. This suggests connectivity issues with upstream dependencies or network saturation.",
-            "unknown": "Detected anomalous behavior that does not match known failure patterns perfectly. Investigating resource and error metrics is recommended."
+            "database_slowdown": {
+                "reasoning": f"Latency spike ({lat}ms) detected with normal CPU. Correlation with DB pool metrics suggests lock contention.",
+                "remediation": ["Check for long-running transactions", "Verify DB connection pool usage"]
+            },
+            "memory_leak": {
+                "reasoning": f"Continuous memory growth ({mem}%) observed. Heap histograms indicate large retention in cache objects.",
+                "remediation": ["Run memory profiler", "Check for cache eviction leaks"]
+            },
+            "network_issue": {
+                "reasoning": f"Packet loss and connection timeouts detected. High error rate ({err}%) correlates with network saturation.",
+                "remediation": ["Check network policies", "Verify upstream service availability"]
+            },
+            "high_traffic": {
+                "reasoning": f"Request rate ({req} req/s) exceeded 3x baseline. CPU ({cpu}%) is saturated due to volume.",
+                "remediation": ["Horizontal scale replicas", "Check rate limiting configurations"]
+            },
+            "dependency_failure": {
+                "reasoning": f"Upstream service 'auth-api' is returning 5xx. Local error rate ({err}%) is caused by timeout propagation.",
+                "remediation": ["Check health of 'auth-api'", "Implement circuit breaking"]
+            }
         }
-        return reasons.get(cause, "Anomalous patterns detected in system telemetry.")
-
-    def _get_remediation(self, cause):
-        remediations = {
-            "resource_exhaustion": [
-                "Increase CPU/Memory limits in Kubernetes manifest",
-                "Check for memory leaks using continuous profiling",
-                "Horizontal scale: Add more replicas to distribute load"
-            ],
-            "database_slowdown": [
-                "Check for long-running transactions in the database",
-                "Verify database connection pool saturation",
-                "Check for missing indexes on frequently queried tables"
-            ],
-            "network_issue": [
-                "Verify network policies are not blocking traffic",
-                "Check upstream service health via Service Map",
-                "Analyze recent network configuration changes"
-            ],
-            "unknown": [
-                "Review application logs for error patterns",
-                "Correlate with recent deployment events",
-                "Check cluster-wide event logs"
-            ]
+        
+        analysis = reasons.get(cause, {
+            "reasoning": "Anomalous behavior detected. Requires manual investigation.",
+            "remediation": ["Analyze logs and metrics", "Check recent deployments"]
+        })
+        
+        return {
+            "is_anomaly": True,
+            "root_cause": cause,
+            "reasoning": analysis["reasoning"],
+            "remediation": analysis["remediation"]
         }
-        return remediations.get(cause, ["Investigate manually using the Service Map and Logs"])
 
     def train(self, normal_data, incident_features, incident_labels):
         """

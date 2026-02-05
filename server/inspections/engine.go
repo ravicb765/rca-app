@@ -88,6 +88,7 @@ type AppMetrics struct {
 	MemoryAllocRate         float64 // bytes/sec
 	LockContention          float64 // in ms
 	GCPause                 float64 // in ms
+	NetworkLatency          float64 // in ms
 }
 
 type MetricPoint struct {
@@ -215,10 +216,10 @@ func getDefaultInspections() []Inspection {
 		{
 			Name:        "Database Connection Pool Exhaustion",
 			Category:    "Database",
-			Rule:        &ConnectionPoolExhaustionRule{Threshold: 100}, // 100 active connections
+			Rule:        &ConnectionPoolExhaustionRule{Threshold: 90}, // 90% of pool
 			Severity:    SeverityCritical,
 			Remediation: "Check database connection pool settings and scale if necessary.",
-			Threshold:   "100 connections",
+			Threshold:   "90%",
 		},
 		{
 			Name:        "Network Packet Loss",
@@ -227,6 +228,14 @@ func getDefaultInspections() []Inspection {
 			Severity:    SeverityWarning,
 			Remediation: "Check network connectivity and switch/router logs.",
 			Threshold:   "1%",
+		},
+		{
+			Name:        "Network Latency",
+			Category:    "Network",
+			Rule:        &NetworkLatencyRule{Threshold: 50}, // 50ms
+			Severity:    SeverityWarning,
+			Remediation: "Check for network congestion, routing issues, or high jitter.",
+			Threshold:   "50ms",
 		},
 		{
 			Name:        "High HTTP 5xx Rate",
@@ -1760,15 +1769,13 @@ func createRule(ruleType string, threshold float64) Rule {
 	case "redis_fragmentation_trend":
 		return &RedisFragmentationTrendRule{Threshold: threshold, MinFrag: 1.5}
 	case "oom_kill_trend":
-		return &OomKillTrendRule{Threshold: threshold, MinKills: 1.0}
+		return &OomKillTrendRule{Threshold: threshold}
 	case "file_system_usage_trend":
 		return &FileSystemUsageTrendRule{Threshold: threshold, MinUsage: 50.0}
 	case "tcp_retransmit_trend":
 		return &TcpRetransmitTrendRule{Threshold: threshold, MinRetransmits: 10.0}
 	case "dns_latency_trend":
 		return &DnsLatencyTrendRule{Threshold: threshold, MinLatency: 5.0}
-	case "kernel_packet_drop_trend":
-		return &KernelPacketDropTrendRule{Threshold: threshold, MinDrops: 10.0}
 	case "error_rate_spike":
 		return &ErrorRateSpikeRule{Multiplier: threshold, MinRate: 0.01}
 	case "udp_packet_loss_trend":
@@ -1777,16 +1784,16 @@ func createRule(ruleType string, threshold float64) Rule {
 		return &PageFaultTrendRule{Threshold: threshold, MinFaults: 100.0}
 	case "context_switch_trend":
 		return &ContextSwitchTrendRule{Threshold: threshold, MinSwitches: 1000.0}
-	case "block_io_latency_trend":
-		return &BlockIOLatencyTrendRule{Threshold: threshold, MinLatency: 10.0}
-	case "runq_latency_trend":
-		return &RunQLatencyTrendRule{Threshold: threshold, MinLatency: 5.0}
 	case "memory_alloc_rate_trend":
 		return &MemoryAllocRateTrendRule{Threshold: threshold, MinRate: 1024 * 1024}
 	case "lock_contention_trend":
 		return &LockContentionTrendRule{Threshold: threshold, MinWait: 10.0}
 	case "gc_pause_trend":
 		return &GCPauseTrendRule{Threshold: threshold, MinPause: 50.0}
+	case "network_latency":
+		return &NetworkLatencyRule{Threshold: threshold}
+	case "connection_pool_exhaustion":
+		return &ConnectionPoolExhaustionRule{Threshold: threshold}
 	default:
 		return &ErrorRateRule{Threshold: threshold}
 	}
@@ -1813,6 +1820,17 @@ func (r *LatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) 
 		return false, fmt.Sprintf("Latency %.2fms > %.2fms", metrics.Latency, r.Threshold)
 	}
 	return true, fmt.Sprintf("Latency %.2fms OK", metrics.Latency)
+}
+
+type NetworkLatencyRule struct {
+	Threshold float64
+}
+
+func (r *NetworkLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
+	if metrics.NetworkLatency > r.Threshold {
+		return false, fmt.Sprintf("Network latency %.2fms > %.2fms", metrics.NetworkLatency, r.Threshold)
+	}
+	return true, fmt.Sprintf("Network latency %.2fms OK", metrics.NetworkLatency)
 }
 
 type MemoryLeakRule struct {
