@@ -1,516 +1,58 @@
-# RCA-App: Observability Platform with AI-Powered Root Cause Analysis
+# RCA-App: Root Cause Analysis Observability Platform
 
-**RCA-App** is an open-source observability platform designed to provide deep insights into your infrastructure and applications with zero manual instrumentation. By leveraging **eBPF**, it automatically captures metrics, logs, traces, and profiles. It then uses an **AI-powered engine** to detect anomalies and identify root causes of incidents in real-time.
-
-## 🚀 Features
-
-- **Zero-Instrumentation Observability**: Uses eBPF to collect telemetry (HTTP, gRPC, DBs) without code changes.
-- **Dynamic Service Map**: Automatically builds a real-time dependency graph of your services.
-- **Circular Dependency Detection**: Automatically identifies and alerts on circular dependencies in your service architecture.
-- **AI Root Cause Analysis**: ML models detect anomalies and correlate them with logs and traces to pinpoint issues.
-- **Unified Telemetry**: Combines metrics, logs, distributed traces, and continuous profiling in one platform.
-- **Kubernetes Native**: Designed to run seamlessly on Kubernetes clusters.
+RCA-App is a comprehensive observability platform designed to provide deep visibility into microservices, identify root causes of incidents using AI, and integrate seamlessly with developer portals.
 
 ## 🏗 Architecture
 
-The platform consists of the following components:
+The platform consists of four main components:
 
-- **Node Agent**: Runs as a DaemonSet, collecting low-level telemetry via eBPF.
-- **Cluster Agent**: Collects K8s metadata and cloud-specific metrics.
-- **Server**: Aggregates data, builds service maps, and exposes APIs.
-- **ML Service**: Performs anomaly detection and root cause analysis.
-- **Backstage Portal**: Provides a developer-friendly UI for visualization.
+1.  **[Node Agent](./node-agent)**: A lightweight eBPF-based agent that runs on every node, capturing network traffic, metrics, and profiles with low overhead.
+2.  **[Backend Server](./server)**: A Go-based server that ingests telemetry, builds real-time service dependency graphs, and runs health inspections.
+3.  **[ML Service](./ml-service)**: A Python service providing Anomaly Detection, Time-Series Forecasting, and LLM-based Root Cause Explanation.
+4.  **[Backstage Portal](./backstage-portal)**: A developer portal integration to visualize service maps, health status, and AI insights.
 
-## 🛠 Quick Start
+## 🚀 Getting Started
 
 ### Prerequisites
 - Docker & Docker Compose
-- Go 1.22+ (for local build)
-- Python 3.10+ (for ML service)
+- Go 1.21+
+- Python 3.9+
+- Node.js 18+ (for Backstage)
+- Linux Kernel 5.4+ (for eBPF Node Agent)
 
-### Running Locally
+### Quick Start (Local)
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/ravicb765/rca-app.git
-   cd rca-app
-   ```
-
-2. **Start the stack**
-   ```bash
-   docker-compose up -d
-   ```
-
-3. **Access the Dashboard**
-   - The API Server is available at `http://localhost:8080`
-   - Check the Service Map: `http://localhost:8080/api/v1/servicemap`
-
-### Simulating Traffic
-
-You can run the included simulation script to generate synthetic incidents:
+Run the entire stack using Docker Compose:
 
 ```bash
-python3 scripts/simulate_incidents.py
+docker-compose up --build
 ```
 
-### 2. Create Configuration Files
+This will start:
+- **Server**: http://localhost:8080
+- **ML Service**: http://localhost:5000
+- **Backstage**: http://localhost:3000
+- **Prometheus**: http://localhost:9090
+- **ClickHouse**: TCP 9000
+- **Jaeger**: http://localhost:16686
 
-**prometheus/prometheus.yml**:
-```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+### Building from Source
 
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
-
-  - job_name: 'node-agents'
-    static_configs:
-      - targets: ['localhost:9100']
-```
-
-**clickhouse/init.sql**:
-```sql
-CREATE DATABASE IF NOT EXISTS observability;
-
-USE observability;
-
--- Logs table
-CREATE TABLE IF NOT EXISTS logs (
-    timestamp DateTime64(9),
-    application String,
-    instance String,
-    level String,
-    message String,
-    pattern_id UInt64,
-    attributes Map(String, String)
-) ENGINE = MergeTree()
-PARTITION BY toYYYYMMDD(timestamp)
-ORDER BY (application, timestamp);
-
--- Traces table
-CREATE TABLE IF NOT EXISTS traces (
-    trace_id String,
-    span_id String,
-    parent_span_id String,
-    operation_name String,
-    start_time DateTime64(9),
-    duration UInt64,
-    application String
-) ENGINE = MergeTree()
-PARTITION BY toYYYYMMDD(start_time)
-ORDER BY (trace_id, start_time);
-```
-
-### 3. Build and Run
+You can build all components using the root Makefile:
 
 ```bash
-# Start all services
-docker-compose up -d
-
-# Check logs
-docker-compose logs -f
-
-# Access the UI
-open http://localhost:8080
+make build
 ```
 
-### 4. Test the Services
+## 📂 Directory Structure
 
-**Test ML Service**:
-```bash
-curl -X POST http://localhost:5000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{
-    "application_id": "test-app",
-    "metrics": {
-      "error_rate": 0.05,
-      "latency_p95": 1200,
-      "cpu_usage": 0.85,
-      "memory_usage": 0.75
-    }
-  }'
-```
+- `/node-agent`: eBPF C code and Go userspace agent.
+- `/server`: Core API, Service Map Builder, Inspection Engine.
+- `/ml-service`: Python ML models and RAG implementation.
+- `/backstage-portal`: Backstage app with custom plugins.
+- `/deploy`: Kubernetes manifests and Helm charts.
+- `/docs`: Architecture and Operations documentation.
 
-**Test Server API**:
-```bash
-# Get service map
-curl http://localhost:8080/api/v1/servicemap
+## 🤝 Contributing
 
-# List applications
-curl http://localhost:8080/api/v1/applications
-```
-
-## Development
-
-**Developer guide:** For detailed developer workflows, eBPF debugging tips, CI/test notes and PR conventions see `rca-app-guide.md` (developer guide) — e.g., `less rca-app-guide.md` or open the file in your editor.
-
-### Node Agent (Go)
-
-```bash
-cd node-agent
-
-# Initialize Go module
-go mod init github.com/ravicb765/rca-app/node-agent
-
-# Add dependencies
-go get github.com/cilium/ebpf
-go get github.com/prometheus/client_golang/prometheus
-
-# Build
-go build -o node-agent main.go
-
-# Run (requires sudo for eBPF)
-sudo ./node-agent
-```
-### Server (Go)
-
-```bash
-cd server
-
-# Initialize Go module
-go mod init github.com/ravicb765/rca-app/server
-
-# Add dependencies
-go get github.com/gin-gonic/gin
-
-# Build
-go build -o server main.go
-
-# Run
-./server
-```
-
-## Monitoring quick HOWTO
-If you operate Prometheus via the Operator (kube-prometheus-stack), apply the ServiceMonitor manifests to let Prometheus discover RCA-App metrics:
-
-```bash
-kubectl apply -f monitoring/servicemonitor-cluster-agent.yaml
-kubectl apply -f monitoring/servicemonitor-server.yaml
-```
-
-- If your cluster enforces RBAC, adapt and apply `monitoring/servicemonitor-rbac.yaml` to ensure Prometheus has rights to `get,list,watch` the ServiceMonitor CRD and `services/endpoints/pods` in the `observability` namespace. You can generate a tailored binding with `monitoring/create-servicemonitor-rbac.sh`:
-
-```bash
-SA_NAME=prometheus-kube-prometheus-prometheus SA_NAMESPACE=monitoring \
-  ./monitoring/create-servicemonitor-rbac.sh | kubectl apply -f -
-```
-
-For CI verification, there are two monitoring integration workflows:
-- `.github/workflows/monitoring-integration.yml` — runs in a disposable k3d cluster on GitHub-hosted runners (manual `workflow_dispatch`).
-- `.github/workflows/monitoring-integration-selfhosted.yml` — runs on a self-hosted runner (label it with `monitoring`) and can be triggered on PRs touching monitoring manifests or manually. This workflow is useful if you have a privileged runner with `kubectl`/`helm` preinstalled and want a PR gate for ServiceMonitor discovery.
-
-### ML Service (Python)
-
-```bash
-cd ml-service
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run
-python main.py
-```
-
-## Kubernetes Deployment
-
-### Deploy with Helm
-
-```bash
-# Create namespace
-kubectl create namespace observability
-
-# Deploy ClickHouse
-helm repo add clickhouse https://charts.clickhouse.com
-helm install clickhouse clickhouse/clickhouse -n observability
-
-# Deploy Prometheus
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm install prometheus prometheus-community/prometheus -n observability
-
-# Deploy RCA-App components
-kubectl apply -f k8s/
-```
-
-### Deploy Node Agent as DaemonSet
-
-```yaml
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: node-agent
-  namespace: observability
-spec:
-  selector:
-    matchLabels:
-      app: node-agent
-  template:
-    metadata:
-      labels:
-        app: node-agent
-    spec:
-      hostNetwork: true
-      hostPID: true
-      containers:
-      - name: agent
-        image: your-registry/node-agent:latest
-        securityContext:
-          privileged: true
-        env:
-        - name: RCA_APP_ENDPOINT
-          value: "http://rca-app-server:8080"
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────┐
-│      Backstage Developer Portal         │
-│   (Web UI with Custom Plugins)          │
-│   ┌─────────────────────────────────┐   │
-│   │ Service Map │ AI Analysis       │   │
-│   │ Inspections │ K8s Dashboard     │   │
-│   └─────────────────────────────────┘   │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────┴──────────────────────────┐
-│         RCA-App Server (Go)             │
-│         - API Gateway                   │
-│         - Service Map Builder           │
-│         - Inspection Engine             │
-└──┬────────┬────────┬─────────┬──────────┘
-   │        │        │         │
-   │        │        │         └───────────┐
-   │        │        │                     │
-┌──┴────┐ ┌┴──────┐ ┌┴────────┐  ┌────────┴────────┐
-│ Click │ │Prome- │ │ Redis   │  │   ML Service    │
-│ House │ │theus  │ │         │  │   (Python)      │
-└───────┘ └───────┘ └─────────┘  └─────────────────┘
-               │
-┌──────────────┴──────────────────────────┐
-│         Node Agents (DaemonSet)         │
-│         - eBPF Data Collection          │
-│         - Metrics Export                │
-└─────────────────────────────────────────┘
-```
-
-### Component Interactions
-
-**Backstage** serves as the frontend, consuming RCA-App APIs:
-- Software Catalog manages service metadata
-- Kubernetes plugin shows real-time cluster state
-- Custom plugins display RCA-App insights (service map, AI analysis, inspections)
-
-**RCA-App Server** aggregates data from agents and provides REST APIs for Backstage
-
-**Node Agents** collect telemetry using eBPF and forward to the server
-
-**ML Service** provides AI-powered root cause analysis
-
-## Key Technologies
-
-- **Backend**: Go (Gin framework)
-- **ML/AI**: Python (scikit-learn, Flask)
-- **eBPF**: cilium/ebpf library
-- **Storage**: 
-  - ClickHouse (logs, traces, profiles)
-  - Prometheus (metrics)
-  - Redis (caching)
-- **Frontend**: Backstage (Developer Portal)
-  - Built-in Kubernetes plugin
-  - Custom RCA-App plugins
-  - Software catalog integration
-
-## 🎨 Web UI: Backstage Integration
-
-RCA-App uses **Backstage** as its web interface, providing a comprehensive developer portal experience:
-
-### Why Backstage?
-
-✅ **Native Kubernetes Support** - Built-in plugins for K8s monitoring  
-✅ **Service Catalog** - Centralized service registry  
-✅ **Extensible** - Easy to add custom plugins  
-✅ **Developer-Friendly** - Familiar UI for engineering teams  
-✅ **100+ Plugins** - Rich ecosystem of integrations  
-
-### Custom RCA-App Plugins
-
-1. **Service Map Plugin** - Visualize service dependencies with health
-2. **AI Analysis Plugin** - AI-powered root cause analysis interface
-3. **Inspections Plugin** - Health checks and SLO tracking
-4. **Profiling Plugin** - Continuous profiling with flamegraphs
-5. **Cost Monitoring Plugin** - Cloud cost attribution per service
-
-### Quick Setup with Backstage
-
-```bash
-# Create Backstage app
-npx @backstage/create-app@latest
-
-# Install Kubernetes plugin
-yarn --cwd packages/app add @backstage/plugin-kubernetes
-yarn --cwd packages/backend add @backstage/plugin-kubernetes-backend
-
-# Install custom RCA-App plugins (coming soon)
-yarn --cwd packages/app add @rca-app/plugin-service-map
-yarn --cwd packages/app add @rca-app/plugin-ai-analysis
-yarn --cwd packages/app add @rca-app/plugin-inspections
-```
-
-See [BACKSTAGE-INTEGRATION.md](../BACKSTAGE-INTEGRATION.md) for detailed setup instructions.
-
-## Next Steps
-
-### Phase 1: MVP (Current)
-- [x] Basic project structure
-- [x] Node agent skeleton
-- [x] Server API skeleton
-- [x] ML service skeleton
-- [ ] Implement eBPF programs
-- [ ] Service map generation
-- [ ] Basic UI
-
-### Phase 2: Core Features
-- [ ] Log pattern clustering
-- [ ] Distributed tracing
-- [ ] Continuous profiling
-- [ ] Health inspections
-
-### Phase 3: AI Integration
-- [ ] Train ML models
-- [ ] LLM integration
-- [ ] Automated RCA
-
-### Phase 4: Advanced Features
-- [ ] SLO tracking
-- [ ] Cost monitoring
-- [ ] Deployment tracking
-- [ ] Multi-tenancy
-
-## eBPF Development
-
-[![eBPF CI](https://github.com/ravicb765/rca-app/actions/workflows/ebpf-ci.yml/badge.svg)](https://github.com/ravicb765/rca-app/actions/workflows/ebpf-ci.yml)
-
-### Writing eBPF Programs
-
-1. **Create C source file** (`node-agent/ebpf/network_tracer.c`):
-
-```c
-#include <linux/bpf.h>
-#include <bpf/bpf_helpers.h>
-
-struct conn_event {
-    __u32 saddr;
-    __u32 daddr;
-    __u16 sport;
-    __u16 dport;
-    __u64 timestamp;
-};
-
-struct {
-    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-    __uint(key_size, sizeof(__u32));
-    __uint(value_size, sizeof(__u32));
-} events SEC(".maps");
-
-SEC("kprobe/tcp_connect")
-int trace_connect(struct pt_regs *ctx) {
-    // Extract connection info and send to userspace
-    struct conn_event event = {};
-    // ... populate event
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
-                          &event, sizeof(event));
-    return 0;
-}
-
-char LICENSE[] SEC("license") = "GPL";
-```
-
-2. **Compile eBPF program**:
-
-```bash
-clang -O2 -target bpf -c network_tracer.c -o network_tracer.o
-```
-
-3. **Load in Go**:
-
-```go
-import "github.com/cilium/ebpf"
-
-spec, err := ebpf.LoadCollectionSpec("network_tracer.o")
-coll, err := ebpf.NewCollection(spec)
-```
-
-## Testing
-
-### Unit Tests
-
-```bash
-# Go tests
-cd server
-go test ./...
-
-# Python tests
-cd ml-service
-pytest tests/
-```
-
-### Integration Tests
-
-```bash
-# Start test environment
-docker-compose -f docker-compose.test.yml up -d
-
-# Run integration tests
-./scripts/run-integration-tests.sh
-```
-
-## Troubleshooting
-
-### eBPF Issues
-
-**Error: "Operation not permitted"**
-- Solution: Run with `sudo` or use privileged container
-
-**Error: "Cannot find kernel BTF"**
-- Solution: Install kernel headers or use BTF-enabled kernel
-
-### Performance Issues
-
-- Check agent resource usage: `docker stats rca-app-node-agent`
-- Monitor ClickHouse disk usage
-- Review Prometheus retention settings
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-Apache License 2.0
-
-## Resources
-
-- [RCA-App Project](https://github.com/ravicb765/rca-app)
-- [eBPF Documentation](https://ebpf.io/)
-- [Prometheus Documentation](https://prometheus.io/docs/)
-- [ClickHouse Documentation](https://clickhouse.com/docs/)
-
-## Support
-
-- GitHub Issues: [Create an issue](https://github.com/ravicb765/rca-app/issues)
-- Community Discussions: [GitHub Discussions](https://github.com/ravicb765/rca-app/discussions)
-
----
-
-Built with ❤️ for the observability community
+Please read the specific module READMEs for detailed development instructions.

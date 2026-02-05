@@ -1,41 +1,43 @@
-# node-agent
+# RCA-App Node Agent
 
-The node-agent is an eBPF-based collector that loads compiled BPF objects and attaches probes to kernel functions or tracepoints.
+The Node Agent is an eBPF-powered telemetry collector designed to run as a DaemonSet on Kubernetes nodes.
 
-Usage
+## Features
 
-- Compile eBPF programs (C) into `.o` objects using clang:
+- **Network Tracing**: Captures TCP connect, accept, and close events to build dependency maps.
+- **L7 Visbility**: Parses HTTP headers to extract methods, paths, and status codes (userspace buffering).
+- **Container Metrics**: Tracks CPU, Memory, and I/O usage per cgroup.
+- **Continuous Profiling**: Low-overhead stack sampling using `perf_events`.
 
-  ```bash
-  clang -O2 -target bpf -c node-agent/ebpf/examples/fixed_stack.c -o node-agent/ebpf/fixed_stack.o
-  ```
+## Pre-requisites
 
-- Build the agent (without eBPF support for testing):
+- Linux Kernel 5.4+ (BTF support recommended)
+- `clang` and `llvm` for compiling eBPF programs.
+- Privileged access (required for loading BPF maps).
 
-  ```bash
-  cd node-agent
-  go build -o node-agent
-  sudo ./node-agent
-  ```
+## Development
 
-- To enable full eBPF behavior (load & attach), compile with the `ebpf` build tag and ensure `github.com/cilium/ebpf` is available in your environment. The host must be Linux with required tools and privileges.
+### Compile eBPF Programs
 
-  ```bash
-  cd node-agent
-  go build -tags ebpf -o node-agent-ebpf
-  sudo ./node-agent-ebpf
-  ```
+```bash
+# Requires clang/llvm installed
+go generate ./...
+```
 
-Notes
+### Run Locally
 
-- The agent will attempt to attach programs based on their section (e.g., `kprobe/tcp_connect`, `kretprobe/tcp_connect`, `tracepoint/net/net_dev_xmit`).
-- A background heartbeat is sent to `$RCA_APP_ENDPOINT/api/v1/agent/heartbeat` every 15s with a JSON object describing loaded programs and maps (now includes a small sample of map values when present).
-- The agent will also read `PERF_EVENT_ARRAY` maps and forward perf records to `$RCA_APP_ENDPOINT/api/v1/agent/event` as JSON payloads.
-- Cleanup is attempted on shutdown; if attachments fail you will see warnings in logs.
+```bash
+# Must be run as root
+sudo go run main.go
+```
 
-Runner provisioning helper
-- Use `scripts/setup-runner.sh` to install packages and register a privileged self-hosted runner (label: `ebpf`) for this repo. Run as root on a test VM and pass `GITHUB_TOKEN` or have `gh` configured. See the script header for usage details.
+## Configuration
 
-Safety
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| `RCA_APP_ENDPOINT` | URL of the central Backend Server | `http://localhost:8080` |
+| `LOG_LEVEL` | Logging verbosity | `info` |
 
-- Loading and attaching eBPF programs requires root privileges and appropriate kernel support. Use an isolated test VM (kernel >= 5.4) or privileged CI runner when running these steps.
+## Architecture
+
+The agent uses `cilium/ebpf` to load C programs into the kernel. It reads events from `BPF_MAP_TYPE_PERF_EVENT_ARRAY` and forwards them to the backend server via a buffered channel.
