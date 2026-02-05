@@ -1,0 +1,32 @@
+name: "rca-node-agent"
+arch: "amd64"
+platform: "linux"
+version: "${VERSION}"
+release: 1
+section: "net"
+priority: "extra"
+maintainer: "RCA Team <support@rca-app.com>"
+description: "RCA Node Agent - eBPF based observability for microservices."
+vendor: "RCA-App"
+homepage: "https://github.com/ravicb765/rca-app"
+license: "Apache 2.0"
+
+contents:
+  - src: "node-agent-amd64"
+    dst: "/usr/bin/rca-node-agent"
+  - src: "ebpf/network_tracer.o"
+    dst: "/etc/rca-node-agent/ebpf/network_tracer.o"
+  - src: "rca-node-agent.service"
+    dst: "/etc/systemd/system/rca-node-agent.service"
+
+scripts:
+  postinstall: scripts/postinstall.sh
+  preremove: scripts/preremove.sh
+
+overrides:
+  deb:
+    depends:
+      - libc6
+  rpm:
+    depends:
+      - glibc
