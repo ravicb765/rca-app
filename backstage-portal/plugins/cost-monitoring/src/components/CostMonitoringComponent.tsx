@@ -6,6 +6,12 @@ import { useAsync } from 'react-use';
 import { useEntity } from '@backstage/plugin-catalog-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
+const PROVIDER_LOGOS: Record<string, string> = {
+    aws: "https://img.icons8.com/color/48/amazon-web-services.png",
+    gcp: "https://img.icons8.com/color/48/google-cloud.png",
+    azure: "https://img.icons8.com/color/48/azure-1.png",
+};
+
 export const CostMonitoringComponent = () => {
     const configApi = useApi(configApiRef);
     const { entity } = useEntity();
@@ -37,7 +43,10 @@ export const CostMonitoringComponent = () => {
     return (
         <InfoCard title="Cloud Cost Monitoring">
             <Box mb={2}>
-                <Typography variant="h4" color="primary">
+                <Typography variant="h4" color="primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {value?.provider && PROVIDER_LOGOS[value.provider.toLowerCase()] && (
+                        <img src={PROVIDER_LOGOS[value.provider.toLowerCase()]} width="32" height="32" alt={value.provider} />
+                    )}
                     {value?.currency || '$'}{value?.total_cost?.toFixed(2) || '0.00'}
                 </Typography>
                 <Typography variant="caption" color="textSecondary">

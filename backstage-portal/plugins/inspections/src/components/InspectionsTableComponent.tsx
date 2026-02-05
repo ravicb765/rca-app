@@ -1,5 +1,14 @@
 import React from 'react';
 import { Table, TableColumn, StatusOk, StatusError, StatusWarning, Progress, ResponseErrorPanel } from '@backstage/core-components';
+import {
+    Language as NetworkIcon,
+    FlashOn as PerformanceIcon,
+    Security as SecurityIcon,
+    Storage as DatabaseIcon,
+    CheckCircle as AvailabilityIcon,
+    Memory as ResourceIcon
+} from '@material-ui/icons';
+import { Box } from '@material-ui/core';
 import { useApi, configApiRef } from '@backstage/core-plugin-api';
 import { useAsync } from 'react-use';
 import { useEntity } from '@backstage/plugin-catalog-react';
@@ -21,7 +30,29 @@ const columns: TableColumn<InspectionRow>[] = [
         }
     },
     { title: 'Name', field: 'name' },
-    { title: 'Category', field: 'category' },
+    {
+        title: 'Category',
+        field: 'category',
+        render: row => {
+            const iconProps = { fontSize: 'small' as const, style: { marginRight: 8 } };
+            let icon = <PerformanceIcon {...iconProps} />;
+
+            switch (row.category.toLowerCase()) {
+                case 'network': icon = <NetworkIcon {...iconProps} style={{ ...iconProps.style, color: '#4FACFE' }} />; break;
+                case 'database': icon = <DatabaseIcon {...iconProps} style={{ ...iconProps.style, color: '#FFB800' }} />; break;
+                case 'security': icon = <SecurityIcon {...iconProps} style={{ ...iconProps.style, color: '#FF3D71' }} />; break;
+                case 'resource': icon = <ResourceIcon {...iconProps} style={{ ...iconProps.style, color: '#00F2FE' }} />; break;
+                case 'availability': icon = <AvailabilityIcon {...iconProps} style={{ ...iconProps.style, color: '#32D74B' }} />; break;
+            }
+
+            return (
+                <Box display="flex" alignItems="center">
+                    {icon}
+                    {row.category}
+                </Box>
+            );
+        }
+    },
     { title: 'Severity', field: 'severity' },
     { title: 'Description', field: 'description' },
 ];

@@ -4,6 +4,8 @@ import { Alert } from '@material-ui/lab';
 import { useApi, configApiRef } from '@backstage/core-plugin-api';
 import { useEntity } from '@backstage/plugin-catalog-react';
 
+const AI_ICON = "https://img.icons8.com/nolan/64/artificial-intelligence.png";
+
 export const AIAnalysisComponent = () => {
     const configApi = useApi(configApiRef);
     const { entity } = useEntity();
@@ -48,7 +50,10 @@ export const AIAnalysisComponent = () => {
         <Card variant="outlined">
             <CardContent>
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                    <Typography variant="h5">AI Root Cause Analysis</Typography>
+                    <Box display="flex" alignItems="center" gap={2}>
+                        <img src={AI_ICON} width="32" height="32" alt="AI" />
+                        <Typography variant="h5">AI Root Cause Analysis</Typography>
+                    </Box>
                     <Button
                         variant="contained"
                         color="primary"

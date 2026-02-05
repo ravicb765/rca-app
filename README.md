@@ -1,4 +1,4 @@
-# RCA-App: Root Cause Analysis Observability Platform
+# <img src="./assets/logo.svg" width="48" height="48" align="center" /> RCA-App: Root Cause Analysis Observability Platform
 
 RCA-App is a comprehensive observability platform designed to provide deep visibility into microservices, identify root causes of incidents using AI, and integrate seamlessly with developer portals.
 
