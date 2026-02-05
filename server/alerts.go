@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"net/smtp"
 	"sync"
@@ -159,9 +160,12 @@ func (e *EmailProvider) Name() string {
 }
 
 func (e *EmailProvider) Send(alert Alert) error {
-	subject := fmt.Sprintf("[%s] %s", alert.Severity, alert.Title)
+	// Sanitize inputs
+	subject := fmt.Sprintf("[%s] %s", alert.Severity, html.EscapeString(alert.Title))
 	body := fmt.Sprintf("Description: %s\nSource: %s\nTimestamp: %s\n", 
-		alert.Description, alert.Source, alert.Timestamp.Format(time.RFC3339))
+		html.EscapeString(alert.Description), 
+		html.EscapeString(alert.Source), 
+		alert.Timestamp.Format(time.RFC3339))
 
 	msg := []byte(fmt.Sprintf("To: %s\r\nSubject: %s\r\n\r\n%s", 
 		e.to[0], subject, body))
@@ -197,13 +201,14 @@ func (s *SlackProvider) Send(alert Alert) error {
 		color = "good"
 	}
 
+	// Sanitize inputs
 	payload := map[string]interface{}{
 		"attachments": []map[string]interface{}{
 			{
 				"color":     color,
-				"title":     alert.Title,
-				"text":      alert.Description,
-				"footer":    alert.Source,
+				"title":     html.EscapeString(alert.Title),
+				"text":      html.EscapeString(alert.Description),
+				"footer":    html.EscapeString(alert.Source),
 				"ts":        alert.Timestamp.Unix(),
 				"fields": []map[string]interface{}{
 					{
@@ -261,16 +266,17 @@ func (p *PagerDutyProvider) Send(alert Alert) error {
 		severity = "info"
 	}
 
+	// Sanitize inputs
 	payload := map[string]interface{}{
 		"routing_key":  p.routingKey,
 		"event_action": "trigger",
 		"payload": map[string]interface{}{
-			"summary":   alert.Title,
-			"source":    alert.Source,
+			"summary":   html.EscapeString(alert.Title),
+			"source":    html.EscapeString(alert.Source),
 			"severity":  severity,
 			"timestamp": alert.Timestamp.Format(time.RFC3339),
 			"custom_details": map[string]interface{}{
-				"description": alert.Description,
+				"description": html.EscapeString(alert.Description),
 				"tags":        alert.Tags,
 			},
 		},

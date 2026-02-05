@@ -27,6 +27,7 @@ import (
 	"github.com/ravicb765/rca-app/server/alerts"
 	"github.com/ravicb765/rca-app/server/deployment"
 	"github.com/ravicb765/rca-app/server/cost"
+	"github.com/ravicb765/rca-app/server/security"
 	"github.com/ravicb765/rca-app/server/pkg/cache"
 	"github.com/ravicb765/rca-app/server/pkg/integrations"
 	"github.com/ravicb765/rca-app/server/pkg/metrics"
@@ -235,6 +236,23 @@ func (s *AgentStore) ListActive() []AgentInfo {
 func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.ServiceMapBuilder, inspectionEngine *inspections.InspectionEngine, sloTracker *slo.SLOTracker, metaCache *MetadataCache) *gin.Engine {
 	r := gin.Default()
 
+	// Apply security middleware
+	r.Use(security.SecurityHeaders())
+	r.Use(security.RequestSizeLimit(10 << 20)) // 10 MB limit
+	
+	// Rate limiter: 100 requests per minute per IP
+	rateLimiter := security.NewRateLimiter(100, time.Minute)
+	r.Use(rateLimiter.Middleware())
+	
+	// API key authentication for all routes except health check
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+	})
+	
+	// Protected routes
+	protected := r.Group("/")
+	protected.Use(security.APIKeyAuth())
+
 	r.GET("/api/v1/servicemap", func(c *gin.Context) {
 		// Get current graph snapshot (Update with nil events)
 		sm := builder.GetServiceMap()
@@ -289,11 +307,29 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 	r.POST("/api/v1/slos", func(c *gin.Context) {
 		var slo slo.SLO
 		if err := c.BindJSON(&slo); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+			return
+		}
+		
+		// Validate inputs
+		if !security.ValidateServiceName(slo.Name) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid SLO name"})
+			return
+		}
+		if err := security.ValidateSLOTarget(slo.Target); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := sloTracker.AddSLO(&slo); err != nil {
+		if err := security.ValidateSLOWindow(slo.Window); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		
+		// Sanitize string fields
+		slo.Name = security.SanitizeString(slo.Name)
+		
+		if err := sloTracker.AddSLO(&slo); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to create SLO"})
 			return
 		}
 		c.JSON(http.StatusCreated, gin.H{"message": "SLO created", "slo": slo})
@@ -364,11 +400,31 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 	r.POST("/api/v1/alerts/config", func(c *gin.Context) {
 		var config alerts.AlertConfig
 		if err := c.BindJSON(&config); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+			return
+		}
+		
+		// Validate provider
+		if err := security.ValidateProvider(config.Provider); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Validate webhook URLs (SSRF protection)
+		if webhookURL, ok := config.Config["webhook_url"].(string); ok {
+			validatedURL, err := security.ValidateURL(webhookURL)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook URL: " + err.Error()})
+				return
+			}
+			config.Config["webhook_url"] = validatedURL
+		}
+		
+		// Sanitize config
+		config.Config = security.SanitizeAlertConfig(config.Config)
+		
 		if err := alertManager.ConfigureProvider(config); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to configure provider"})
 			return
 		}
 		c.JSON(http.StatusCreated, gin.H{"message": "Alert provider configured"})
@@ -410,14 +466,26 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 	r.POST("/api/v1/alerts/test", func(c *gin.Context) {
 		var testAlert alerts.Alert
 		if err := c.BindJSON(&testAlert); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+			return
+		}
+		
+		// Validate severity
+		if err := security.ValidateAlertSeverity(string(testAlert.Severity)); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Sanitize inputs
+		testAlert.Title = security.SanitizeString(testAlert.Title)
+		testAlert.Description = security.SanitizeString(testAlert.Description)
+		testAlert.Source = security.SanitizeString(testAlert.Source)
+		
 		if testAlert.Timestamp.IsZero() {
 			testAlert.Timestamp = time.Now()
 		}
 		if err := alertManager.SendAlert(testAlert); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send alert"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "Test alert sent successfully"})
@@ -455,9 +523,20 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		}
 		namespace := c.Param("namespace")
 		name := c.Param("name")
+		
+		// Validate inputs
+		if !security.ValidateNamespace(namespace) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid namespace"})
+			return
+		}
+		if !security.ValidateServiceName(name) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid service name"})
+			return
+		}
+		
 		limit := 10
 		if limitStr := c.Query("limit"); limitStr != "" {
-			if l, err := strconv.Atoi(limitStr); err == nil {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
 				limit = l
 			}
 		}
@@ -488,9 +567,24 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 	r.POST("/api/v1/costs", func(c *gin.Context) {
 		var costData cost.CostData
 		if err := c.BindJSON(&costData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 			return
 		}
+		
+		// Validate inputs
+		if !security.ValidateServiceName(costData.Service) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid service name"})
+			return
+		}
+		if !security.ValidateCost(costData.Cost) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cost value"})
+			return
+		}
+		
+		// Sanitize string fields
+		costData.Service = security.SanitizeString(costData.Service)
+		costData.Period = security.SanitizeString(costData.Period)
+		
 		costTracker.TrackCost(costData)
 		c.JSON(http.StatusCreated, gin.H{"message": "Cost data recorded"})
 	})
