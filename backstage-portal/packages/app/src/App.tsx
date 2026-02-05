@@ -12,8 +12,13 @@ import { AppStatusPage } from '@backstage/core-components';
 import { Root } from './components/Root';
 import { EntityPage } from './components/catalog/EntityPage';
 
+import { SignInPage } from './components/SignInPage';
+
 const app = createApp({
     apis: [],
+    components: {
+        SignInPage: SignInPage,
+    },
     bindRoutes({ bind }) {
         bind(CatalogIndexPage.routes, {
             catalogEntity: CatalogEntityPage.routes.catalogEntity,
