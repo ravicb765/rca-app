@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/ravicb765/rca-app/server/inspections"
+	"github.com/ravicb765/rca-app/server/pkg/metrics"
 	"github.com/ravicb765/rca-app/server/servicemap"
 	"github.com/ravicb765/rca-app/server/slo"
 )
@@ -394,6 +395,59 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		}
 		log.Printf("Received metrics for %d processes", len(processes))
 		c.JSON(http.StatusOK, gin.H{"received": true, "count": len(processes)})
+	})
+
+	// Metrics Query API (Prompt 2.3)
+	metricsEngine := metrics.NewQueryEngine(v1api)
+
+	r.GET("/api/v1/metrics/query", func(c *gin.Context) {
+		q := c.Query("query")
+		if q == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "query parameter required"})
+			return
+		}
+		// Default to now
+		ts := time.Now()
+		if tStr := c.Query("time"); tStr != "" {
+			if parsed, err := time.Parse(time.RFC3339, tStr); err == nil {
+				ts = parsed
+			}
+		}
+		
+		val, err := metricsEngine.Query(c.Request.Context(), q, ts)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "data": val})
+	})
+
+	r.GET("/api/v1/metrics/query_range", func(c *gin.Context) {
+		q := c.Query("query")
+		startStr := c.Query("start")
+		endStr := c.Query("end")
+		stepStr := c.Query("step")
+		
+		if q == "" || startStr == "" || endStr == "" || stepStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "query, start, end, step parameters required"})
+			return
+		}
+		
+		start, err1 := time.Parse(time.RFC3339, startStr)
+		end, err2 := time.Parse(time.RFC3339, endStr)
+		step, err3 := time.ParseDuration(stepStr)
+		
+		if err1 != nil || err2 != nil || err3 != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid time format"})
+			return
+		}
+
+		val, err := metricsEngine.QueryRange(c.Request.Context(), q, v1.Range{Start: start, End: end, Step: step})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "data": val})
 	})
 
 	return r

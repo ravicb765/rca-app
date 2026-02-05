@@ -58,6 +58,13 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.47
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+
   prometheus:
     image: prom/prometheus:latest
     ports:
