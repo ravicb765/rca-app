@@ -35,4 +35,22 @@ rcaApp:
 
 ## Scaffolder Templates
 
-Includes a `microservice-with-observability` template to create new services with RCA-App annotations pre-configured.
+
+## Docker
+
+### Build for Production
+
+To build the production-ready Docker image (which serves the frontend via the backend):
+
+```bash
+docker build -t rca-app/backstage-portal:latest .
+```
+
+### Run Tests in Docker
+
+To run the full test suite in an isolated environment:
+
+```bash
+docker build -f Dockerfile.test -t backstage-tests .
+docker run backstage-tests
+```
