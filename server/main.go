@@ -22,17 +22,26 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/ravicb765/rca-app/server/inspections"
+	"github.com/ravicb765/rca-app/server/pkg/cache"
+	"github.com/ravicb765/rca-app/server/pkg/integrations"
 	"github.com/ravicb765/rca-app/server/pkg/metrics"
+	"github.com/ravicb765/rca-app/server/pkg/store"
+	"github.com/ravicb765/rca-app/server/pkg/stream"
+	"github.com/ravicb765/rca-app/server/pkg/telemetry"
 	"github.com/ravicb765/rca-app/server/servicemap"
 	"github.com/ravicb765/rca-app/server/slo"
 )
 
 var kvRe = regexp.MustCompile(`(src|source|dst|dest|proto)=([^\s]+)`)
 
-// MetadataCache implements servicemap.K8sMetadataCache
 type MetadataCache struct {
 	mu   sync.RWMutex
 	pods map[string]*servicemap.Instance
+}
+
+type MockAggregator struct{}
+func (m *MockAggregator) Process(data map[string]float64) {
+	log.Printf("Processed stream metrics: %v", data)
 }
 
 func NewMetadataCache() *MetadataCache {
@@ -397,8 +406,15 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		c.JSON(http.StatusOK, gin.H{"received": true, "count": len(processes)})
 	})
 
+	// Phase 6: Metrics Cache
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	metricsCache := cache.NewMetricsCache(redisAddr)
+
 	// Metrics Query API (Prompt 2.3)
-	metricsEngine := metrics.NewQueryEngine(v1api)
+	metricsEngine := metrics.NewQueryEngine(v1api, metricsCache)
 
 	r.GET("/api/v1/metrics/query", func(c *gin.Context) {
 		q := c.Query("query")
@@ -541,10 +557,50 @@ func main() {
 	// Prometheus metrics for server-side ingestion
 	reg := prometheus.NewRegistry()
 
+	// Phase 6: OpenTelemetry
+	otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if otelEndpoint == "" {
+		otelEndpoint = "localhost:4317"
+	}
+	tp, err := telemetry.InitTracer(context.Background(), otelEndpoint)
+	if err != nil {
+		log.Printf("Failed to init OTel: %v", err)
+	} else {
+		defer tp.Shutdown(context.Background())
+	}
+
+	// Phase 6: ClickHouse
+	chAddr := os.Getenv("CLICKHOUSE_ADDR")
+	if chAddr == "" {
+		chAddr = "localhost:9000"
+	}
+	chStore, err := store.NewClickHouseStore(chAddr)
+	if err != nil {
+		log.Printf("Failed to connect to ClickHouse: %v", err)
+	} else {
+		log.Println("Connected to ClickHouse")
+	}
+	_ = chStore // Use it in handlers later
+
+	// Phase 6: Integrations
+	intManager := integrations.NewIntegrationManager()
+
 	// Initialize ServiceMapBuilder with metadata cache
 	metaCache := NewMetadataCache()
 	builder := servicemap.NewServiceMapBuilder(metaCache)
 	inspectionEngine := inspections.NewInspectionEngine(reg)
+
+	// Phase 6: Kafka Stream Processor
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers != "" {
+		// Mock aggregator for now, implemented in earlier phase
+		agg := &MockAggregator{} 
+		processor := stream.NewStreamProcessor(agg, strings.Split(kafkaBrokers, ","), "rca-metrics")
+		go processor.Start(context.Background())
+		defer processor.Close()
+	}
+
+	// Initialize SLO Tracker
 
 	// Initialize SLO Tracker
 	promURL := os.Getenv("PROMETHEUS_URL")

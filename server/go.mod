@@ -6,6 +6,12 @@ require (
 	github.com/gin-gonic/gin v1.9.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/stretchr/testify v1.8.4
+	github.com/segmentio/kafka-go v0.4.47
+	github.com/ClickHouse/clickhouse-go/v2 v2.10.0
+	github.com/redis/go-redis/v9 v9.0.5
+	go.opentelemetry.io/otel v1.16.0
+	go.opentelemetry.io/otel/sdk v1.16.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.16.0
 
 )
 
