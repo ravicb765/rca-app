@@ -1,0 +1,47 @@
+{
+    "name": "root",
+    "version": "1.0.0",
+    "private": true,
+    "engines": {
+        "node": "18 || 20"
+    },
+    "scripts": {
+        "dev": "concurrently \"yarn start\" \"yarn start-backend\"",
+        "start": "yarn workspace app start",
+        "start-backend": "yarn workspace backend start",
+        "build": "backstage-cli repo build",
+        "build-image": "yarn workspace backend build-image",
+        "tsc": "tsc",
+        "tsc:full": "tsc --skipLibCheck false --incremental false",
+        "clean": "backstage-cli repo clean",
+        "test": "backstage-cli repo test",
+        "test:all": "backstage-cli repo test --coverage",
+        "lint": "backstage-cli repo lint"
+    },
+    "workspaces": {
+        "packages": [
+            "packages/*",
+            "plugins/*"
+        ]
+    },
+    "devDependencies": {
+        "@backstage/cli": "^0.22.0",
+        "concurrently": "^8.0.0",
+        "lerna": "^7.0.0",
+        "typescript": "~5.0.0"
+    },
+    "resolutions": {
+        "@types/react": "^18",
+        "@types/react-dom": "^18"
+    },
+    "prettier": "@spotify/prettier-config",
+    "lint-staged": {
+        "*.{js,jsx,ts,tsx,mjs,cjs}": [
+            "eslint --fix",
+            "prettier --write"
+        ],
+        "*.{json,md}": [
+            "prettier --write"
+        ]
+    }
+}

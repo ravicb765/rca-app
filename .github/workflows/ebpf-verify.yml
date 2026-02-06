@@ -1,0 +1,44 @@
+name: eBPF compile & verify
+
+on:
+  push:
+    paths:
+      - 'node-agent/ebpf/**'
+  pull_request:
+    paths:
+      - 'node-agent/ebpf/**'
+
+jobs:
+  compile:
+    name: Compile eBPF objects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm make
+      - name: Compile eBPF C files
+        run: |
+          set -e
+          for f in node-agent/ebpf/*.c; do
+            echo "Compiling $f"
+            clang -O2 -target bpf -c "$f" -o "${f%.c}.o"
+          done
+      - name: List compiled objects
+        run: ls -la node-agent/ebpf/*.o
+
+  verify-load:
+    name: Optional verify (self-hosted)
+    runs-on: [self-hosted, linux, x64, ebpf]
+    needs: compile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify load with bpftool
+        run: |
+          set -e
+          for o in node-agent/ebpf/*.o; do
+            echo "Attempting to load $o"
+            sudo bpftool prog load "$o" "/sys/fs/bpf/$(basename $o .o)" || true
+          done
+          sudo bpftool prog show || true

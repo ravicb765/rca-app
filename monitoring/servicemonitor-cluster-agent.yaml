@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cluster-agent-sm
+  namespace: observability
+  labels:
+    team: observability
+spec:
+  selector:
+    matchLabels:
+      app: cluster-agent
+  namespaceSelector:
+    matchNames:
+      - observability
+  endpoints:
+    - port: 9100
+      path: /metrics
+      interval: 30s
+      honorLabels: true

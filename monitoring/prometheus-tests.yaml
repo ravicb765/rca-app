@@ -1,0 +1,52 @@
+# Run this test with: promtool test rules monitoring/prometheus-tests.yaml
+rule_files:
+    - prometheus-rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+    - interval: 1m
+      input_series:
+          # --- Redis Latency Data ---
+          # Scenario: 'slow-redis' has high latency (all requests > 0.05s)
+          # le="0.05" stays 0, le="+Inf" increases by 100 every minute.
+          - series: 'node_agent_redis_query_latency_seconds_bucket{destination="slow-redis", le="0.05"}'
+            values: '0+0x10'
+          - series: 'node_agent_redis_query_latency_seconds_bucket{destination="slow-redis", le="+Inf"}'
+            values: '0+100x10'
+          
+          # Scenario: 'fast-redis' has low latency (all requests <= 0.05s)
+          - series: 'node_agent_redis_query_latency_seconds_bucket{destination="fast-redis", le="0.05"}'
+            values: '0+100x10'
+          - series: 'node_agent_redis_query_latency_seconds_bucket{destination="fast-redis", le="+Inf"}'
+            values: '0+100x10'
+
+          # --- HTTP Error Rate Data ---
+          # Scenario: 'api-service' starts healthy, then spikes 500s
+          # 200 OK: steady rate of 100/min
+          - series: 'node_agent_http_requests_total{destination="api-service", status_code="200"}'
+            values: '0+100x15'
+          # 500 Error: 0 for first 5 mins, then 20/min (approx 16% error rate)
+          - series: 'node_agent_http_requests_total{destination="api-service", status_code="500"}'
+            values: '0+0x5 0+20x10'
+
+      alert_rule_test:
+          # Check Redis Alert (should fire after 5m for slow-redis)
+          - eval_time: 5m
+            alertname: HighRedisLatency
+            exp_alerts:
+                - exp_labels:
+                      severity: warning
+                      destination: slow-redis
+                  exp_annotations:
+                      summary: "High Redis latency on slow-redis"
+
+          # Check HTTP Alert (should fire after ~10m when the 5m rate window captures the errors)
+          - eval_time: 10m
+            alertname: HighHttpErrorRate
+            exp_alerts:
+                - exp_labels:
+                      severity: critical
+                      destination: api-service
+                  exp_annotations:
+                      summary: "High HTTP 5xx error rate on api-service"

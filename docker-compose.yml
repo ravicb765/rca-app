@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  node-agent:
+    build: ./node-agent
+    privileged: true
+    network_mode: host
+    pid: host
+    volumes:
+      - /sys:/sys:ro
+      - /sys/kernel/debug:/sys/kernel/debug
+    environment:
+      - RCA_APP_ENDPOINT=http://localhost:8080
+
+  server:
+    build: ./server
+    ports:
+      - "8080:8080"
+    depends_on:
+      - clickhouse
+      - prometheus
+    environment:
+      - CLICKHOUSE_URL=clickhouse:9000
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ML_SERVICE_URL=http://ml-service:5000
+      - RCA_API_KEY=rca-dev-secret-key
+      - RCA_DB_PATH=/app/data/rca-app.db
+    volumes:
+      - server-data:/app/data
+
+  ml-service:
+    build: ./ml-service
+    ports:
+      - "5000:5000"
+
+  backstage:
+    build: ./backstage-portal
+    ports:
+      - "3000:7007"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - RCA_APP_API_KEY=rca-dev-secret-key
+      - RCA_APP_BASE_URL=http://server:8080
+    depends_on:
+      - postgres
+      - server
+
+  postgres:
+    image: postgres:13
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=backstage_plugin
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./deploy/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  redis:
+    image: redis:7.0
+    ports:
+      - "6379:6379"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.47
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-remote-write-receiver'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+
+volumes:
+  clickhouse-data:
+  prometheus-data:
+  server-data:

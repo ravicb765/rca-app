@@ -1,0 +1,30 @@
+name: eBPF Examples Compile
+
+on:
+  pull_request:
+    paths:
+      - 'node-agent/ebpf/**'
+
+jobs:
+  compile-examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps (clang, libbpf, headers, bpftool)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libbpf-dev linux-libc-dev linux-headers-generic pkg-config make build-essential libelf-dev
+          # also attempt to install headers matching the running kernel; don't fail if not available
+          sudo apt-get install -y linux-headers-$(uname -r) || true
+
+      - name: Compile examples and capture logs
+        run: |
+          chmod +x node-agent/ebpf/examples/compile_and_log_examples.sh
+          node-agent/ebpf/examples/compile_and_log_examples.sh
+
+      - name: Upload compile logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-example-compile-logs
+          path: node-agent/ebpf/examples/logs/*.compile.log

@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rca-app-server
+  namespace: observability
+  labels:
+    app: rca-app-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rca-app-server
+  template:
+    metadata:
+      labels:
+        app: rca-app-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+      - name: server
+        image: rca-app-server:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: CLUSTER_AGENT_URL
+          value: "http://cluster-agent.observability.svc.cluster.local:80"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/applications
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+          requests:
+            memory: "128Mi"
+            cpu: "200m"

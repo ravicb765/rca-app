@@ -1,0 +1,109 @@
+openapi: 3.0.0
+info:
+  title: RCA-App API
+  description: API for Root Cause Analysis Observability Platform
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local Development Server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ServiceMap:
+      type: object
+      properties:
+        applications:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Application'
+        connections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Connection'
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [http, grpc, postgres, mysql, redis, unknown]
+    Connection:
+      type: object
+      properties:
+        source_app:
+          type: string
+        dest_app:
+          type: string
+        request_rate:
+          type: number
+        error_rate:
+          type: number
+        latency:
+          type: number
+
+paths:
+  /servicemap:
+    get:
+      summary: Get Service Dependency Graph
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceMap'
+  
+  /health/inspections:
+    get:
+      summary: Run/Get Health Inspections
+      responses:
+        '200':
+          description: List of inspection results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    status:
+                      type: string
+                    remediation:
+                      type: string
+
+  /analyze:
+    post:
+      summary: Trigger AI Root Cause Analysis
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                incident_id:
+                  type: string
+      responses:
+        '200':
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  root_cause:
+                    type: string
+                  confidence:
+                    type: number
+                  remediation_steps:
+                    type: array
+                    items:
+                      type: string

@@ -1,0 +1,46 @@
+{{- if .Values.jaeger.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rca-app.fullname" . }}-jaeger
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: jaeger
+spec:
+  selector:
+    matchLabels:
+      {{- include "rca-app.selectorLabels" . | nindent 6 }}
+      component: jaeger
+  template:
+    metadata:
+      labels:
+        {{- include "rca-app.selectorLabels" . | nindent 8 }}
+        component: jaeger
+    spec:
+      containers:
+        - name: jaeger
+          image: {{ .Values.jaeger.image }}
+          ports:
+            - containerPort: 16686
+            - containerPort: 14268
+            - containerPort: 14250
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rca-app-jaeger
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: jaeger
+spec:
+  ports:
+    - port: 16686
+      name: ui
+    - port: 14268
+      name: collector-http
+    - port: 14250
+      name: collector-grpc
+  selector:
+    {{- include "rca-app.selectorLabels" . | nindent 4 }}
+    component: jaeger
+{{- end }}

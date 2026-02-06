@@ -1,0 +1,126 @@
+# Default values for rca-app.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+  imagePullSecrets: []
+  nameOverride: ""
+  fullnameOverride: ""
+  rcaApiKey: "rca-prod-secret-key"
+
+server:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: rca-app-server
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 1Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  env:
+    clickhouseUrl: "rca-app-clickhouse:9000"
+    prometheusUrl: "http://rca-app-prometheus:9090"
+    mlServiceUrl: "http://rca-app-ml-service:5000"
+
+nodeAgent:
+  enabled: true
+  image:
+    repository: rca-node-agent
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  env:
+    rcaAppEndpoint: "http://rca-app-server:8080"
+
+mlService:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: rca-app-ml-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+backstage:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: rca-app-backstage
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 7007
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+  postgres:
+    host: "rca-app-postgres"
+    port: 5432
+    user: "postgres"
+    password: "postgres-password"
+    database: "backstage_plugin"
+
+# Infrastructure components (set to true to deploy alongside the app)
+postgres:
+  enabled: true
+  image: postgres:13
+  persistence:
+    enabled: true
+    size: 5Gi
+
+clickhouse:
+  enabled: true
+  image: clickhouse/clickhouse-server:latest
+  persistence:
+    enabled: true
+    size: 10Gi
+
+prometheus:
+  enabled: true
+  image: prom/prometheus:latest
+  persistence:
+    enabled: true
+    size: 10Gi
+
+redis:
+  enabled: true
+  image: redis:7.0
+
+kafka:
+  enabled: false # Resource heavy, disabled by default
+
+jaeger:
+  enabled: true
+  image: jaegertracing/all-in-one:1.47

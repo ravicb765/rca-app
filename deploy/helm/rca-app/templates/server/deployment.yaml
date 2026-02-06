@@ -1,0 +1,56 @@
+{{- if .Values.server.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rca-app.fullname" . }}-server
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: server
+spec:
+  replicas: {{ .Values.server.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rca-app.selectorLabels" . | nindent 6 }}
+      component: server
+  template:
+    metadata:
+      labels:
+        {{- include "rca-app.selectorLabels" . | nindent 8 }}
+        component: server
+    spec:
+      containers:
+        - name: server
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: CLICKHOUSE_URL
+              value: {{ .Values.server.env.clickhouseUrl | quote }}
+            - name: PROMETHEUS_URL
+              value: {{ .Values.server.env.prometheusUrl | quote }}
+            - name: ML_SERVICE_URL
+              value: {{ .Values.server.env.mlServiceUrl | quote }}
+            - name: RCA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "rca-app.fullname" . }}-common
+                  key: rca-api-key
+            - name: RCA_DB_PATH
+              value: "/app/data/rca-app.db"
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.server.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "rca-app.fullname" . }}-server
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

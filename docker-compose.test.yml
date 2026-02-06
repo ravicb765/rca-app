@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # Node agent is mocked or runs in non-privileged mode for basic integration tests
+  node-agent:
+    build: ./node-agent
+    environment:
+      - RCA_APP_ENDPOINT=http://server:8080
+    depends_on:
+      - server
+
+  server:
+    build: ./server
+    ports:
+      - "8080:8080"
+    environment:
+      - CLICKHOUSE_URL=clickhouse:9000
+      - PROMETHEUS_URL=http://prometheus:9090
+      - ML_SERVICE_URL=http://ml-service:5000
+    depends_on:
+      - clickhouse
+      - prometheus
+      - ml-service
+
+  ml-service:
+    build: ./ml-service
+    ports:
+      - "5000:5000"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    environment:
+      - CLICKHOUSE_DB=observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

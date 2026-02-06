@@ -1,0 +1,23 @@
+[Unit]
+Description=RCA Node Agent (eBPF Observability)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/rca-app/node-agent
+ExecStart=/opt/rca-app/node-agent/node-agent
+Restart=always
+RestartSec=5
+
+# eBPF Requirements
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_BPF CAP_PERFMON
+AmbientCapabilities=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_BPF CAP_PERFMON
+NoNewPrivileges=true
+
+# Environment
+Environment=RCA_APP_ENDPOINT=http://rca-server:8080
+Environment=LOG_LEVEL=info
+
+[Install]
+WantedBy=multi-user.target

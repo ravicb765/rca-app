@@ -1,0 +1,19 @@
+# Go
+bin/
+*.o
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# eBPF artifacts
+node-agent/ebpf/*.o
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

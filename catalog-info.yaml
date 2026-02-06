@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payment-service
+  description: Payment processing microservice with RCA-App observability
+  annotations:
+    backstage.io/kubernetes-id: payment-service
+    backstage.io/kubernetes-namespace: production
+    rca-app.io/enable-ai-analysis: 'true'
+    rca-app.io/cost-tracking: 'enabled'
+spec:
+  type: service
+  lifecycle: production
+  owner: payments-team

@@ -1,0 +1,52 @@
+{{- if .Values.backstage.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rca-app.fullname" . }}-backstage
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: backstage
+spec:
+  replicas: {{ .Values.backstage.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "rca-app.selectorLabels" . | nindent 6 }}
+      component: backstage
+  template:
+    metadata:
+      labels:
+        {{- include "rca-app.selectorLabels" . | nindent 8 }}
+        component: backstage
+    spec:
+      containers:
+        - name: backstage
+          image: "{{ .Values.backstage.image.repository }}:{{ .Values.backstage.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.backstage.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 7007
+              protocol: TCP
+          env:
+            - name: POSTGRES_HOST
+              value: {{ .Values.backstage.postgres.host | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.backstage.postgres.port | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.backstage.postgres.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "rca-app.fullname" . }}-common
+                  key: postgres-password
+            - name: POSTGRES_DB
+              value: {{ .Values.backstage.postgres.database | quote }}
+            - name: RCA_APP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "rca-app.fullname" . }}-common
+                  key: rca-api-key
+            - name: RCA_APP_BASE_URL
+              value: "http://{{ include "rca-app.fullname" . }}-server:8080"
+          resources:
+            {{- toYaml .Values.backstage.resources | nindent 12 }}
+{{- end }}

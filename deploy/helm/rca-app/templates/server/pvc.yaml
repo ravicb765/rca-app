@@ -1,0 +1,18 @@
+{{- if and .Values.server.enabled .Values.server.persistence.enabled -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rca-app.fullname" . }}-server
+  labels:
+    {{- include "rca-app.labels" . | nindent 4 }}
+    component: server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.server.persistence.storageClass }}
+  storageClassName: {{ .Values.server.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.server.persistence.size | quote }}
+{{- end }}

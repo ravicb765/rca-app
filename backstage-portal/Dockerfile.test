@@ -1,0 +1,27 @@
+# Dockerfile.test for running Backstage unit tests
+FROM node:18-bullseye-slim
+
+WORKDIR /app
+
+# Install dependencies needed for some native builds (e.g. isolating-proxy)
+RUN apt-get update && \
+    apt-get install -y python3 build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy package descriptors
+COPY package.json yarn.lock .yarnrc.yml ./
+COPY .yarn ./.yarn
+COPY packages/app/package.json packages/app/
+COPY packages/backend/package.json packages/backend/
+COPY plugins/service-map/package.json plugins/service-map/
+COPY plugins/ai-analysis/package.json plugins/ai-analysis/
+COPY plugins/inspections/package.json plugins/inspections/
+
+# Install all dependencies (including dev)
+RUN yarn install --immutable
+
+# Copy source code
+COPY . .
+
+# Run Tests
+CMD ["yarn", "test:all"]

@@ -1,0 +1,59 @@
+name: Monitoring Integration (self-hosted)
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - 'monitoring/**'
+      - 'cluster-agent/**'
+      - 'server/**'
+
+jobs:
+  monitoring-selfhosted:
+    name: Run monitoring integration on self-hosted runner
+    runs-on: [self-hosted, linux, x64, monitoring]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pre-check runner tools
+        run: |
+          set -e
+          command -v kubectl >/dev/null 2>&1 || { echo "kubectl not found on runner"; exit 1; }
+          command -v helm >/dev/null 2>&1 || { echo "helm not found on runner"; exit 1; }
+
+      - name: Create observability namespace
+        run: kubectl create ns observability || true
+
+      - name: Deploy RCA-App manifests
+        run: |
+          kubectl apply -n observability -f cluster-agent/k8s/deployment.yaml
+          kubectl apply -n observability -f cluster-agent/k8s/service.yaml
+          kubectl apply -n observability -f server/k8s/deployment.yaml
+          kubectl apply -n observability -f server/k8s/service.yaml
+
+      - name: Apply ServiceMonitors
+        run: |
+          kubectl apply -f monitoring/servicemonitor-cluster-agent.yaml
+          kubectl apply -f monitoring/servicemonitor-server.yaml
+
+      - name: Wait for ServiceMonitors
+        run: |
+          for i in {1..24}; do
+            if kubectl get servicemonitor -n observability &>/dev/null; then
+              kubectl get servicemonitor -n observability -o yaml
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ServiceMonitor not found after timeout"; exit 1
+
+      - name: Cleanup (optional)
+        if: always()
+        run: |
+          kubectl delete -f monitoring/servicemonitor-cluster-agent.yaml || true
+          kubectl delete -f monitoring/servicemonitor-server.yaml || true
+          kubectl delete -n observability -f cluster-agent/k8s/deployment.yaml || true
+          kubectl delete -n observability -f cluster-agent/k8s/service.yaml || true
+          kubectl delete -n observability -f server/k8s/deployment.yaml || true
+          kubectl delete -n observability -f server/k8s/service.yaml || true

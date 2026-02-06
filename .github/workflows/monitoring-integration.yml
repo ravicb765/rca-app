@@ -1,0 +1,62 @@
+name: Monitoring Integration (manual)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  k3d-deploy:
+    runs-on: ubuntu-latest
+    # This is a manual / optional check; fails early if prerequisites unavailable.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          curl -fsSL https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz | tar -xz && sudo mv linux-amd64/helm /usr/local/bin/helm
+
+      - name: Create k3d cluster
+        run: |
+          set -e
+          k3d cluster create rca-test --wait
+
+      - name: Install Prometheus operator (kube-prometheus-stack)
+        run: |
+          set -e
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          kubectl create ns monitoring || true
+          helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring --wait
+
+      - name: Create observability namespace
+        run: kubectl create ns observability || true
+
+      - name: Deploy RCA-App manifests
+        run: |
+          kubectl apply -n observability -f cluster-agent/k8s/deployment.yaml
+          kubectl apply -n observability -f cluster-agent/k8s/service.yaml
+          kubectl apply -n observability -f server/k8s/deployment.yaml
+          kubectl apply -n observability -f server/k8s/service.yaml
+
+      - name: Apply ServiceMonitors
+        run: |
+          kubectl apply -f monitoring/servicemonitor-cluster-agent.yaml
+          kubectl apply -f monitoring/servicemonitor-server.yaml
+
+      - name: Wait for ServiceMonitors to appear (timeout 2m)
+        run: |
+          for i in {1..24}; do
+            kubectl get servicemonitor -n observability && break
+            sleep 5
+          done
+
+      - name: Show ServiceMonitors
+        run: kubectl get servicemonitor -n observability -o yaml
+
+      - name: Cleanup cluster
+        if: always()
+        run: k3d cluster delete rca-test || true
