@@ -1,26 +1,36 @@
-.PHONY: all build docker-build clean tidy
+.PHONY: all server node-agent cluster-agent backstage-portal push
 
-all: build
+VERSION ?= 1.0
 
-build:
-	$(MAKE) -C server build
-	$(MAKE) -C node-agent build
-	$(MAKE) -C ml-service build
-	$(MAKE) -C backstage-portal build
+all: server node-agent cluster-agent backstage-portal
 
-docker-build:
-	$(MAKE) -C server docker-build
-	$(MAKE) -C node-agent docker-build
-	$(MAKE) -C ml-service docker-build
-	$(MAKE) -C backstage-portal docker-build
+server:
+	@echo "Building Server..."
+	$(MAKE) -C server VERSION=$(VERSION)
+
+node-agent:
+	@echo "Building Node Agent..."
+	$(MAKE) -C node-agent VERSION=$(VERSION)
+
+cluster-agent:
+	@echo "Building Cluster Agent..."
+	$(MAKE) -C cluster-agent VERSION=$(VERSION)
+
+backstage-portal:
+	@echo "Building Backstage Portal..."
+	$(MAKE) -C backstage-portal VERSION=$(VERSION)
 
 clean:
+	@echo "Cleaning..."
 	$(MAKE) -C server clean
 	$(MAKE) -C node-agent clean
-	$(MAKE) -C ml-service clean
+	$(MAKE) -C cluster-agent clean
 	$(MAKE) -C backstage-portal clean
+	rm -rf dist
 
-tidy:
-	cd server && go mod tidy
-	cd node-agent && go mod tidy
-	cd ml-service && if [ -f go.mod ]; then go mod tidy; fi
+push:
+	@echo "Pushing images..."
+	$(MAKE) -C server push VERSION=$(VERSION)
+	$(MAKE) -C node-agent push VERSION=$(VERSION)
+	$(MAKE) -C cluster-agent push VERSION=$(VERSION)
+	$(MAKE) -C backstage-portal push VERSION=$(VERSION)

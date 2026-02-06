@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +76,9 @@ func TestClusterAgentIntegration(t *testing.T) {
 	h.HandleFunc("/api/v1/cluster/services", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string][]string{"services": {"ns/a", "ns/b"}})
 	})
+	h.HandleFunc("/api/v1/cluster/pods", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string][]PodInfo{"pods": {}})
+	})
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
@@ -91,15 +95,21 @@ func TestClusterAgentIntegration(t *testing.T) {
 	fetchSuccess := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fetch_success"})
 	fetchErrors := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_fetch_errors"})
 	client := &http.Client{Timeout: 2 * time.Second}
-	if err := fetchOnce(client, srv.URL, store, fetchSuccess, fetchErrors, fetchTotal); err != nil {
-		t.Fatalf("fetchOnce failed: %v", err)
+	if err := fetchClusterData(client, srv.URL, store, metaCache, fetchSuccess, fetchErrors, fetchTotal); err != nil {
+		t.Fatalf("fetchClusterData failed: %v", err)
 	}
+	os.Setenv("RCA_API_KEY", testAPIKey)
 
 	r := newRouter(store, agentStore, builder, inspectionEngine, sloTracker, alerts.NewAlertManager(), nil, cost.NewCostTracker(), ml.NewClient(""), metaCache, nil)
 	ts := httptest.NewServer(r)
 	defer ts.Close()
 
-	res, err := http.Get(ts.URL + "/api/v1/servicemap")
+	req, err := http.NewRequest("GET", ts.URL+"/api/v1/servicemap", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("X-API-Key", testAPIKey)
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET servicemap failed: %v", err)
 	}

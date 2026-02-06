@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -22,20 +23,20 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/model"
 
-	"github.com/ravicb765/rca-app/server/database"
-	"github.com/ravicb765/rca-app/server/inspections"
 	"github.com/ravicb765/rca-app/server/alerts"
-	"github.com/ravicb765/rca-app/server/deployment"
 	"github.com/ravicb765/rca-app/server/cost"
+	"github.com/ravicb765/rca-app/server/database"
+	"github.com/ravicb765/rca-app/server/deployment"
+	"github.com/ravicb765/rca-app/server/inspections"
 	"github.com/ravicb765/rca-app/server/ml"
-	"github.com/ravicb765/rca-app/server/security"
 	"github.com/ravicb765/rca-app/server/pkg/cache"
-	"github.com/ravicb765/rca-app/server/pkg/integrations"
 	"github.com/ravicb765/rca-app/server/pkg/metrics"
-	"github.com/ravicb765/rca-app/server/pkg/store"
+	pkg_store "github.com/ravicb765/rca-app/server/pkg/store"
 	"github.com/ravicb765/rca-app/server/pkg/stream"
 	"github.com/ravicb765/rca-app/server/pkg/telemetry"
+	"github.com/ravicb765/rca-app/server/security"
 	"github.com/ravicb765/rca-app/server/servicemap"
 	"github.com/ravicb765/rca-app/server/slo"
 )
@@ -71,6 +72,7 @@ type MetadataCache struct {
 }
 
 type MockAggregator struct{}
+
 func (m *MockAggregator) Process(data map[string]float64) {
 	log.Printf("Processed stream metrics: %v", data)
 }
@@ -282,16 +284,16 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 	// Apply security middleware
 	r.Use(security.SecurityHeaders())
 	r.Use(security.RequestSizeLimit(10 << 20)) // 10 MB limit
-	
+
 	// Rate limiter: 100 requests per minute per IP
 	rateLimiter := security.NewRateLimiter(100, time.Minute)
 	r.Use(rateLimiter.Middleware())
-	
+
 	// API key authentication for all routes except health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 	})
-	
+
 	// Protected routes
 	protected := r.Group("/")
 	protected.Use(security.APIKeyAuth())
@@ -353,7 +355,7 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 			return
 		}
-		
+
 		// Validate inputs
 		if !security.ValidateServiceName(slo.Name) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid SLO name"})
@@ -367,10 +369,10 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// Sanitize string fields
 		slo.Name = security.SanitizeString(slo.Name)
-		
+
 		if err := sloTracker.AddSLO(&slo); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to create SLO"})
 			return
@@ -443,13 +445,13 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 			return
 		}
-		
+
 		// Validate provider
 		if err := security.ValidateProvider(config.Provider); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// Validate webhook URLs (SSRF protection)
 		if webhookURL, ok := config.Config["webhook_url"].(string); ok {
 			validatedURL, err := security.ValidateURL(webhookURL)
@@ -459,10 +461,10 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			}
 			config.Config["webhook_url"] = validatedURL
 		}
-		
+
 		// Sanitize config
 		config.Config = security.SanitizeAlertConfig(config.Config)
-		
+
 		if err := alertManager.ConfigureProvider(config); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to configure provider"})
 			return
@@ -509,18 +511,18 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 			return
 		}
-		
+
 		// Validate severity
 		if err := security.ValidateAlertSeverity(string(testAlert.Severity)); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		// Sanitize inputs
 		testAlert.Title = security.SanitizeString(testAlert.Title)
 		testAlert.Description = security.SanitizeString(testAlert.Description)
 		testAlert.Source = security.SanitizeString(testAlert.Source)
-		
+
 		if testAlert.Timestamp.IsZero() {
 			testAlert.Timestamp = time.Now()
 		}
@@ -555,7 +557,7 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		}
 		namespace := c.Param("namespace")
 		name := c.Param("name")
-		
+
 		// Validate inputs
 		if !security.ValidateNamespace(namespace) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid namespace"})
@@ -565,7 +567,7 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid service name"})
 			return
 		}
-		
+
 		limit := 10
 		if limitStr := c.Query("limit"); limitStr != "" {
 			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
@@ -599,7 +601,7 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 			return
 		}
-		
+
 		// Validate inputs
 		if !security.ValidateServiceName(costData.Service) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid service name"})
@@ -609,11 +611,11 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cost value"})
 			return
 		}
-		
+
 		// Sanitize string fields
 		costData.Service = security.SanitizeString(costData.Service)
 		costData.Period = security.SanitizeString(costData.Period)
-		
+
 		costTracker.TrackCost(costData)
 		c.JSON(http.StatusCreated, gin.H{"message": "Cost data recorded"})
 	})
@@ -642,7 +644,7 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		service := c.Param("service")
 		period := c.DefaultQuery("period", "30d")
 		costs := costTracker.GetCostByService(service, period)
-		
+
 		total := 0.0
 		for _, v := range costs {
 			total += v.Cost
@@ -693,8 +695,8 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		profiles := []map[string]interface{}{
 			{
 				"timestamp": time.Now().Format(time.RFC3339),
-				"type": "cpu",
-				"samples": 1240,
+				"type":      "cpu",
+				"samples":   1240,
 				"stacks": []string{
 					"main.main;main.run;runtime.mcall;runtime.park_m;runtime.schedule;runtime.execute",
 					"main.main;net/http.(*Server).ListenAndServe;net/http.(*Server).Serve;net/http.(*conn).serve",
@@ -722,25 +724,33 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 
 		// Gather metrics for the ML service
 		metrics := make(map[string]interface{})
-		
+
 		// CPU Usage (%)
 		cpu, _ := fetchMetricValue(c.Request.Context(), v1api, fmt.Sprintf("sum(rate(container_cpu_usage_seconds_total{pod=~'%s.*'}[5m])) * 100", req.ApplicationID))
-		if cpu == 0 { cpu = 45.5 } // Fallback for DEMO
+		if cpu == 0 {
+			cpu = 45.5
+		} // Fallback for DEMO
 		metrics["cpu"] = cpu
 
 		// Memory Usage (%)
 		mem, _ := fetchMetricValue(c.Request.Context(), v1api, fmt.Sprintf("sum(container_memory_working_set_bytes{pod=~'%s.*'}) / sum(machine_memory_bytes) * 100", req.ApplicationID))
-		if mem == 0 { mem = 62.1 } // Fallback for DEMO
+		if mem == 0 {
+			mem = 62.1
+		} // Fallback for DEMO
 		metrics["memory"] = mem
 
 		// Latency (ms)
 		latency, _ := fetchMetricValue(c.Request.Context(), v1api, fmt.Sprintf("histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service='%s'}[5m])) by (le)) * 1000", req.ApplicationID))
-		if latency == 0 { latency = 120.5 } // Fallback for DEMO
+		if latency == 0 {
+			latency = 120.5
+		} // Fallback for DEMO
 		metrics["latency"] = latency
 
 		// Error Rate (%)
 		errors, _ := fetchMetricValue(c.Request.Context(), v1api, fmt.Sprintf("(sum(rate(http_requests_total{service='%s',status=~'5..'}[5m])) / sum(rate(http_requests_total{service='%s'}[5m]))) * 100", req.ApplicationID, req.ApplicationID))
-		if errors == 0 { errors = 0.5 } // Fallback for DEMO
+		if errors == 0 {
+			errors = 0.5
+		} // Fallback for DEMO
 		metrics["error_rate"] = errors
 
 		analysisReq := ml.AnalysisRequest{
@@ -901,7 +911,7 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 				ts = parsed
 			}
 		}
-		
+
 		val, err := metricsEngine.Query(c.Request.Context(), q, ts)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -915,16 +925,16 @@ func newRouter(store *serviceStore, agentStore *AgentStore, builder *servicemap.
 		startStr := c.Query("start")
 		endStr := c.Query("end")
 		stepStr := c.Query("step")
-		
+
 		if q == "" || startStr == "" || endStr == "" || stepStr == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "query, start, end, step parameters required"})
 			return
 		}
-		
+
 		start, err1 := time.Parse(time.RFC3339, startStr)
 		end, err2 := time.Parse(time.RFC3339, endStr)
 		step, err3 := time.ParseDuration(stepStr)
-		
+
 		if err1 != nil || err2 != nil || err3 != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid time format"})
 			return
@@ -1046,7 +1056,7 @@ func main() {
 		log.Printf("Warning: failed to create prometheus client: %v", err)
 	}
 	v1api := v1.NewAPI(promClient)
-	
+
 	sloTracker := slo.NewSLOTracker(v1api)
 	if err := sloTracker.SetDatabase(db); err != nil {
 		log.Printf("Warning: failed to initialize SLO database: %v", err)
@@ -1095,7 +1105,7 @@ func main() {
 	if chAddr == "" {
 		chAddr = "localhost:9000"
 	}
-	chStore, err := store.NewClickHouseStore(chAddr)
+	chStore, err := pkg_store.NewClickHouseStore(chAddr)
 	if err != nil {
 		log.Printf("Failed to connect to ClickHouse: %v", err)
 	} else {
@@ -1111,7 +1121,7 @@ func main() {
 	// Kafka Stream Processor
 	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
 	if kafkaBrokers != "" {
-		agg := &MockAggregator{} 
+		agg := &MockAggregator{}
 		processor := stream.NewStreamProcessor(agg, strings.Split(kafkaBrokers, ","), "rca-metrics")
 		go processor.Start(context.Background())
 		defer processor.Close()

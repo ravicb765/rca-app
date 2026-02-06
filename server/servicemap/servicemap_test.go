@@ -2,7 +2,6 @@ package servicemap
 
 import (
 	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"

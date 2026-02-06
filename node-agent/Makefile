@@ -1,37 +1,40 @@
-.PHONY: build docker-build clean
+.PHONY: all build clean tidy docker-build package build-ebpf push
 
-BINARY_NAME=node-agent
-DOCKER_IMAGE=rca-app-node-agent:latest
+VERSION ?= 1.0
+BINARY_NAME=node-agent-$(VERSION)
+DOCKER_IMAGE=node-agent:$(VERSION)
 
-build:
+all: build
+
+tidy:
 	go mod tidy
-	go build -o $(BINARY_NAME) main.go
 
-build-amd64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-amd64 main.go
+# Compile eBPF C code to BPF bytecode using clang
+# This target generates the missing .o file required by the package step
+build-ebpf:
+	mkdir -p ebpf
+	# We assume the source is at ebpf/network_tracer.c
+	clang -O2 -g -target bpf -D__TARGET_ARCH_$(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/') -I/usr/include/$(shell uname -m)-linux-gnu -c ebpf/network_tracer.c -o ebpf/network_tracer.o
 
-docker-build:
-	docker build -t $(DOCKER_IMAGE) .
+# Build the Go binary, ensuring eBPF object is built first
+build: tidy build-ebpf
+	CGO_ENABLED=0 GOOS=linux go build -o node-agent main.go
 
-clean:
-	rm -f $(BINARY_NAME)
-	rm -f rca-node-agent.tar.gz
-
+# Package the binary and the eBPF object file
 package: build
 	mkdir -p dist/ebpf
 	cp $(BINARY_NAME) dist/
-	cp ebpf/network_tracer.o dist/ebpf/ || true
-	cp rca-node-agent.service dist/
-	cp scripts/install.sh dist/
-	chmod +x dist/scripts/install.sh
-	tar -czvf rca-node-agent.tar.gz -C dist .
+	cp ebpf/network_tracer.o dist/ebpf/
+
+clean:
+	go clean
+	rm -f $(BINARY_NAME)
+	rm -f ebpf/*.o
 	rm -rf dist
-	@echo "Package created: rca-node-agent.tar.gz"
+	docker rmi $(DOCKER_IMAGE) || true
 
-package-deb: build-amd64
-	VERSION=$$(cat ../VERSION 2>/dev/null || echo "0.1.0") ; \
-	nfpm pkg --config nfpm.yaml --target rca-node-agent_$$VERSION\_amd64.deb
+docker-build: tidy build-ebpf build package
+	docker build --no-cache -t $(DOCKER_IMAGE) .
 
-package-rpm: build-amd64
-	VERSION=$$(cat ../VERSION 2>/dev/null || echo "0.1.0") ; \
-	nfpm pkg --config nfpm.yaml --target rca-node-agent-$$VERSION-1.x86_64.rpm
+push: docker-build
+	docker push $(DOCKER_IMAGE)

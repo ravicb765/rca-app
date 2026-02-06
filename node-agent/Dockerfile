@@ -1,24 +1,34 @@
-FROM golang:1.21-alpine AS builder
+# Build stage
+FROM golang:1.24-bookworm AS builder
 
-# Install build dependencies for eBPF compilation
-RUN apk add --no-cache clang llvm make
+# Install dependencies for eBPF compilation
+RUN apt-get update && apt-get install -y \
+    clang \
+    llvm \
+    make \
+    libbpf-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Copy dependency files first for caching
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source code
 COPY . .
-# Compile the eBPF C program
-RUN make -C ebpf
 
-# Build the Go binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o node-agent main.go
+# Build the binary and eBPF object
+RUN make build 
 
-FROM alpine:latest
+# Runtime stage
+FROM alpine:3.22
+
 WORKDIR /app
+
+# Copy binary and eBPF object from builder
 COPY --from=builder /app/node-agent .
+COPY --from=builder /app/ebpf/network_tracer.o ./ebpf/
 
-# Copy the compiled eBPF object to the expected location
-COPY --from=builder /app/ebpf/network_tracer.o ./ebpf/network_tracer.o
-
+# The agent requires privileged access to load eBPF programs
 CMD ["./node-agent"]

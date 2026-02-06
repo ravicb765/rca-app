@@ -1,16 +1,16 @@
 .PHONY: all build clean tidy docker-build push
 
 VERSION ?= 1.0
-BINARY_NAME=server
-DOCKER_IMAGE=rca-app-server:$(VERSION)
+BINARY_NAME=cluster-agent
+DOCKER_IMAGE=clusteragent:$(VERSION)
 
 all: build
 
 tidy:
 	go mod tidy
 
-build: tidy
-	CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -tags musl -ldflags="-s -w" -o $(BINARY_NAME) main.go
+build: clean tidy
+	CGO_ENABLED=0 GOOS=linux go build -o $(BINARY_NAME) ./
 
 clean:
 	go clean

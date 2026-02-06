@@ -1,12 +1,15 @@
-.PHONY: build docker-build clean
+.PHONY: all docker-build push clean
 
-build:
-	yarn install
-	yarn tsc
-	yarn build:backend
+VERSION ?= 1.0
+DOCKER_IMAGE=backstage-portal:$(VERSION)
+
+all: docker-build
 
 docker-build:
-	docker build -t rca-app/backstage-portal:latest .
+	docker build --no-cache -t $(DOCKER_IMAGE) .
+
+push: docker-build
+	docker push $(DOCKER_IMAGE)
 
 clean:
-	rm -rf dist packages/*/dist
+	docker rmi $(DOCKER_IMAGE) || true

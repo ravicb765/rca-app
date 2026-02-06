@@ -1800,28 +1800,6 @@ func createRule(ruleType string, threshold float64) Rule {
 }
 
 // Rule Implementations
-type ErrorRateRule struct {
-	Threshold float64
-}
-
-func (r *ErrorRateRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.ErrorRate > r.Threshold {
-		return false, fmt.Sprintf("Error rate %.2f%% > %.2f%%", metrics.ErrorRate*100, r.Threshold*100)
-	}
-	return true, fmt.Sprintf("Error rate %.2f%% OK", metrics.ErrorRate*100)
-}
-
-type LatencyRule struct {
-	Threshold float64
-}
-
-func (r *LatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.Latency > r.Threshold {
-		return false, fmt.Sprintf("Latency %.2fms > %.2fms", metrics.Latency, r.Threshold)
-	}
-	return true, fmt.Sprintf("Latency %.2fms OK", metrics.Latency)
-}
-
 type NetworkLatencyRule struct {
 	Threshold float64
 }
@@ -1831,17 +1809,6 @@ func (r *NetworkLatencyRule) Evaluate(app *servicemap.Application, metrics AppMe
 		return false, fmt.Sprintf("Network latency %.2fms > %.2fms", metrics.NetworkLatency, r.Threshold)
 	}
 	return true, fmt.Sprintf("Network latency %.2fms OK", metrics.NetworkLatency)
-}
-
-type MemoryLeakRule struct {
-	Threshold float64
-}
-
-func (r *MemoryLeakRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.MemoryUsage > r.Threshold {
-		return false, fmt.Sprintf("Memory usage %.2fMB > %.2fMB", metrics.MemoryUsage, r.Threshold)
-	}
-	return true, fmt.Sprintf("Memory usage %.2fMB OK", metrics.MemoryUsage)
 }
 
 type MemoryLeakTrendRule struct {
@@ -1969,17 +1936,6 @@ func (r *LatencyDegradationRule) EvaluateTrend(app *servicemap.Application, hist
 	return true, fmt.Sprintf("Latency %.2fms within normal range (avg: %.2fms)", current, avg)
 }
 
-type CPUUsageRule struct {
-	Threshold float64
-}
-
-func (r *CPUUsageRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.CPUUsage > r.Threshold {
-		return false, fmt.Sprintf("CPU usage %.2f%% > %.2f%%", metrics.CPUUsage, r.Threshold)
-	}
-	return true, fmt.Sprintf("CPU usage %.2f%% OK", metrics.CPUUsage)
-}
-
 type CPUUsageTrendRule struct {
 	Threshold float64
 	MinUsage  float64
@@ -2025,105 +1981,6 @@ func (r *CPUUsageTrendRule) EvaluateTrend(app *servicemap.Application, history [
 	}
 
 	return true, fmt.Sprintf("CPU usage %.2f%% within normal range (avg: %.2f%%)", current, avg)
-}
-
-type DiskUsageRule struct {
-	Threshold float64
-}
-
-func (r *DiskUsageRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.DiskUsage > r.Threshold {
-		return false, fmt.Sprintf("Disk usage %.2f%% > %.2f%%", metrics.DiskUsage, r.Threshold)
-	}
-	return true, fmt.Sprintf("Disk usage %.2f%% OK", metrics.DiskUsage)
-}
-
-type IOLoadRule struct {
-	Threshold float64
-}
-
-func (r *IOLoadRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.IOLoad > r.Threshold {
-		return false, fmt.Sprintf("IO Load %.2f > %.2f", metrics.IOLoad, r.Threshold)
-	}
-	return true, fmt.Sprintf("IO Load %.2f OK", metrics.IOLoad)
-}
-
-type ConnectionPoolExhaustionRule struct {
-	Threshold float64
-}
-
-func (r *ConnectionPoolExhaustionRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.ActiveConnections > r.Threshold {
-		return false, fmt.Sprintf("Active connections %.0f > %.0f", metrics.ActiveConnections, r.Threshold)
-	}
-	return true, fmt.Sprintf("Active connections %.0f OK", metrics.ActiveConnections)
-}
-
-type PacketLossRule struct {
-	Threshold float64
-}
-
-func (r *PacketLossRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.PacketLoss > r.Threshold {
-		return false, fmt.Sprintf("Packet loss %.2f%% > %.2f%%", metrics.PacketLoss, r.Threshold)
-	}
-	return true, fmt.Sprintf("Packet loss %.2f%% OK", metrics.PacketLoss)
-}
-
-type Http5xxRateRule struct {
-	Threshold float64
-}
-
-func (r *Http5xxRateRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.Http5xxRate > r.Threshold {
-		return false, fmt.Sprintf("HTTP 5xx rate %.2f%% > %.2f%%", metrics.Http5xxRate*100, r.Threshold*100)
-	}
-	return true, fmt.Sprintf("HTTP 5xx rate %.2f%% OK", metrics.Http5xxRate*100)
-}
-
-type IOWaitRule struct {
-	Threshold float64
-}
-
-func (r *IOWaitRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.IOWait > r.Threshold {
-		return false, fmt.Sprintf("IO Wait %.2f%% > %.2f%%", metrics.IOWait, r.Threshold)
-	}
-	return true, fmt.Sprintf("IO Wait %.2f%% OK", metrics.IOWait)
-}
-
-type SwapUsageRule struct {
-	Threshold float64
-}
-
-func (r *SwapUsageRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.SwapUsage > r.Threshold {
-		return false, fmt.Sprintf("Swap usage %.2f%% > %.2f%%", metrics.SwapUsage, r.Threshold)
-	}
-	return true, fmt.Sprintf("Swap usage %.2f%% OK", metrics.SwapUsage)
-}
-
-type RestartCountRule struct {
-	Threshold float64
-}
-
-func (r *RestartCountRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.RestartCount > r.Threshold {
-		return false, fmt.Sprintf("Restart count %.0f > %.0f", metrics.RestartCount, r.Threshold)
-	}
-	return true, fmt.Sprintf("Restart count %.0f OK", metrics.RestartCount)
-}
-
-type CPUThrottlingRule struct {
-	Threshold float64
-}
-
-func (r *CPUThrottlingRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.CPUThrottling > r.Threshold {
-		return false, fmt.Sprintf("CPU throttling %.2f%% > %.2f%%", metrics.CPUThrottling, r.Threshold)
-	}
-	return true, fmt.Sprintf("CPU throttling %.2f%% OK", metrics.CPUThrottling)
 }
 
 type CPUThrottlingTrendRule struct {
@@ -2178,105 +2035,6 @@ func (r *CPUThrottlingTrendRule) EvaluateTrend(app *servicemap.Application, hist
 	}
 
 	return true, fmt.Sprintf("CPU throttling %.2f%% within normal range (avg: %.2f%%)", current, avg)
-}
-
-type GoroutineCountRule struct {
-	Threshold float64
-}
-
-func (r *GoroutineCountRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.GoroutineCount > r.Threshold {
-		return false, fmt.Sprintf("Goroutine count %.0f > %.0f", metrics.GoroutineCount, r.Threshold)
-	}
-	return true, fmt.Sprintf("Goroutine count %.0f OK", metrics.GoroutineCount)
-}
-
-type OpenFDCountRule struct {
-	Threshold float64
-}
-
-func (r *OpenFDCountRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.OpenFDs > r.Threshold {
-		return false, fmt.Sprintf("Open FDs %.0f > %.0f", metrics.OpenFDs, r.Threshold)
-	}
-	return true, fmt.Sprintf("Open FDs %.0f OK", metrics.OpenFDs)
-}
-
-type ThreadCountRule struct {
-	Threshold float64
-}
-
-func (r *ThreadCountRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.ThreadCount > r.Threshold {
-		return false, fmt.Sprintf("Thread count %.0f > %.0f", metrics.ThreadCount, r.Threshold)
-	}
-	return true, fmt.Sprintf("Thread count %.0f OK", metrics.ThreadCount)
-}
-
-type MemcachedLatencyRule struct {
-	Threshold float64
-}
-
-func (r *MemcachedLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.MemcachedLatency > r.Threshold {
-		return false, fmt.Sprintf("Memcached latency %.2fms > %.2fms", metrics.MemcachedLatency, r.Threshold)
-	}
-	return true, fmt.Sprintf("Memcached latency %.2fms OK", metrics.MemcachedLatency)
-}
-
-type PostgresLatencyRule struct {
-	Threshold float64
-}
-
-func (r *PostgresLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.MysqlLatency > r.Threshold {
-		return false, fmt.Sprintf("DB latency %.2fms > %.2fms", metrics.MysqlLatency, r.Threshold)
-	}
-	return true, fmt.Sprintf("DB latency %.2fms OK", metrics.MysqlLatency)
-}
-
-type MongoLatencyRule struct {
-	Threshold float64
-}
-
-func (r *MongoLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.MongoLatency > r.Threshold {
-		return false, fmt.Sprintf("Mongo latency %.2fms > %.2fms", metrics.MongoLatency, r.Threshold)
-	}
-	return true, fmt.Sprintf("Mongo latency %.2fms OK", metrics.MongoLatency)
-}
-
-type RabbitMQLatencyRule struct {
-	Threshold float64
-}
-
-func (r *RabbitMQLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.RabbitMQLatency > r.Threshold {
-		return false, fmt.Sprintf("RabbitMQ latency %.2fms > %.2fms", metrics.RabbitMQLatency, r.Threshold)
-	}
-	return true, fmt.Sprintf("RabbitMQ latency %.2fms OK", metrics.RabbitMQLatency)
-}
-
-type RabbitMQQueueLengthRule struct {
-	Threshold float64
-}
-
-func (r *RabbitMQQueueLengthRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.RabbitMQQueueLength > r.Threshold {
-		return false, fmt.Sprintf("RabbitMQ queue length %.0f > %.0f", metrics.RabbitMQQueueLength, r.Threshold)
-	}
-	return true, fmt.Sprintf("RabbitMQ queue length %.0f OK", metrics.RabbitMQQueueLength)
-}
-
-type CassandraLatencyRule struct {
-	Threshold float64
-}
-
-func (r *CassandraLatencyRule) Evaluate(app *servicemap.Application, metrics AppMetrics) (bool, string) {
-	if metrics.CassandraLatency > r.Threshold {
-		return false, fmt.Sprintf("Cassandra latency %.2fms > %.2fms", metrics.CassandraLatency, r.Threshold)
-	}
-	return true, fmt.Sprintf("Cassandra latency %.2fms OK", metrics.CassandraLatency)
 }
 
 type NetworkLatencyTrendRule struct {

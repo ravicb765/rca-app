@@ -1,22 +1,27 @@
-FROM golang:1.21-alpine AS builder
+# Build stage
+FROM golang:1.24-alpine AS builder
 
-# Install build dependencies for CGO (SQLite)
-RUN apk add --no-cache gcc musl-dev
+# Install build dependencies (gcc, musl-dev for CGO)
+RUN apk add --no-cache build-base
 
 WORKDIR /app
+
+# Copy dependency files first for caching
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source code
 COPY . .
-# Build binary with CGO enabled for SQLite
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o server main.go
 
-FROM alpine:latest
-# Install sqlite-libs in the runtime stage just in case
-RUN apk add --no-cache sqlite-libs
+# Build with CGO enabled, using musl tags for sqlite3
+RUN CGO_ENABLED=1 GOOS=linux CGO_CFLAGS="-D_LARGEFILE64_SOURCE" go build -tags musl -ldflags="-s -w" -o server main.go
+
+# Runtime stage
+FROM alpine:3.22
 
 WORKDIR /app
+
+# Copy binary from builder
 COPY --from=builder /app/server .
 
-EXPOSE 8080
 CMD ["./server"]

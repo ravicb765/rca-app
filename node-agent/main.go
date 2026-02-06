@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -70,7 +72,7 @@ func main() {
 		for {
 			record, err := rd.Read()
 			if err != nil {
-				if perf.IsClosed(err) {
+				if errors.Is(err, perf.ErrClosed) {
 					return
 				}
 				log.Printf("Error reading perf event: %v", err)
@@ -88,12 +90,13 @@ func main() {
 			src := net.IPv4(byte(event.Saddr), byte(event.Saddr>>8), byte(event.Saddr>>16), byte(event.Saddr>>24))
 			dst := net.IPv4(byte(event.Daddr), byte(event.Daddr>>8), byte(event.Daddr>>16), byte(event.Daddr>>24))
 
-			fmt.Printf("[%s] PID:%d Comm:%s %s:%d -> %s:%d\n", time.Now().Format(time.RFC3339), event.Pid, comm, src, event.Sport, dst, event.Dport)
+			// Dport is in network byte order (Big Endian), while we read it as Little Endian. Swap bytes.
+			dport := (event.Dport >> 8) | (event.Dport << 8)
+
+			fmt.Printf("[%s] PID:%d Comm:%s %s:%d -> %s:%d\n", time.Now().Format(time.RFC3339), event.Pid, comm, src, event.Sport, dst, dport)
 		}
 	}()
 
-	// 6. Listen for events...
-	
 	// 7. Self-monitoring routine
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
@@ -101,7 +104,7 @@ func main() {
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 			// In production, this would be exported to Prometheus
-			fmt.Printf("[%s] [AGENT_MONITOR] Alloc=%v MiB, TotalAlloc=%v MiB, Sys=%v MiB, NumGC=%v\n", 
+			fmt.Printf("[%s] [AGENT_MONITOR] Alloc=%v MiB, TotalAlloc=%v MiB, Sys=%v MiB, NumGC=%v\n",
 				time.Now().Format(time.RFC3339), m.Alloc/1024/1024, m.TotalAlloc/1024/1024, m.Sys/1024/1024, m.NumGC)
 		}
 	}()
